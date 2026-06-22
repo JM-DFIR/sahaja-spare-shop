@@ -1,0 +1,9 @@
+# Editor & System Files
+.DS_Store
+Thumbs.db
+.gemini/
+.agents/
+.vscode/
+
+# Local Netlify state
+.netlify/

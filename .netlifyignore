@@ -1,0 +1,15 @@
+# Files Netlify should NOT deploy
+# These contain DB schema, seed data, and internal documentation
+
+schema_additions.sql
+*.sql
+
+# Development/editor files
+*.md
+.gitignore
+.git/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini

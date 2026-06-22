@@ -1,0 +1,264 @@
+/* ============================================================
+   RECEIPT PRINT STYLES — Thermal 80mm optimized
+   ============================================================ */
+
+/* ---- On-screen receipt modal ---- */
+.receipt-modal-body {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+  background: var(--bg-secondary);
+}
+
+.receipt-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 14px 24px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- The receipt itself ---- */
+.receipt {
+  width: 302px;  /* ~80mm */
+  background: #fff;
+  color: #000;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  padding: 16px 14px;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.receipt-header { text-align: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed #999; }
+.receipt-shop-name { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
+.receipt-shop-sub { font-size: 10px; color: #555; margin-bottom: 4px; }
+.receipt-shop-phone { font-size: 11px; font-weight: 600; }
+.receipt-shop-address { font-size: 10px; color: #555; margin-top: 2px; }
+
+.receipt-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #555;
+  margin-bottom: 2px;
+}
+
+.receipt-type {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  border: 1px solid #000;
+  padding: 3px 0;
+  margin: 8px 0;
+}
+
+.receipt-type.cash { border-color: #222; }
+.receipt-type.credit { border-color: #555; color: #555; }
+
+.receipt-divider { border: none; border-top: 1px dashed #bbb; margin: 8px 0; }
+
+/* ---- Items table ---- */
+.receipt-items { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+
+.receipt-items th {
+  font-size: 9px;
+  text-transform: uppercase;
+  font-weight: 700;
+  border-bottom: 1px dashed #bbb;
+  padding: 3px 2px;
+  text-align: left;
+  color: #333;
+  background: transparent;
+}
+
+.receipt-items th.right { text-align: right; }
+
+.receipt-items td {
+  font-size: 11px;
+  padding: 4px 2px;
+  vertical-align: top;
+  color: #000;
+  border-bottom: none;
+  background: transparent;
+}
+
+.receipt-items td.right { text-align: right; font-weight: 600; }
+.receipt-item-name { font-weight: 600; }
+.receipt-item-detail { font-size: 9px; color: #666; }
+
+/* ---- Totals ---- */
+.receipt-totals { border-top: 1px dashed #bbb; padding-top: 8px; }
+
+.receipt-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 3px;
+  color: #333;
+}
+
+.receipt-total-row.grand {
+  font-size: 14px;
+  font-weight: 900;
+  color: #000;
+  border-top: 1px solid #000;
+  padding-top: 6px;
+  margin-top: 4px;
+}
+
+.receipt-total-row.vat-note { font-size: 9px; color: #777; margin-top: 4px; font-style: italic; }
+
+/* ---- MPESA section ---- */
+.receipt-mpesa {
+  border: 1px dashed #555;
+  border-radius: 3px;
+  padding: 5px 6px;
+  margin: 8px 0;
+  font-size: 10px;
+  color: #333;
+}
+
+.receipt-mpesa-title { font-weight: 800; font-size: 11px; margin-bottom: 2px; }
+.receipt-mpesa-txn { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: 1px; }
+
+/* ---- Credit section ---- */
+.receipt-credit-note {
+  background: #f5f5f5;
+  border: 1px dashed #999;
+  border-radius: 3px;
+  padding: 5px 6px;
+  font-size: 10px;
+  margin: 8px 0;
+  text-align: center;
+}
+
+/* ---- Footer ---- */
+.receipt-footer {
+  border-top: 1px dashed #bbb;
+  margin-top: 8px;
+  padding-top: 8px;
+  text-align: center;
+  font-size: 10px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.receipt-thank-you { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 3px; }
+
+/* ============================================================
+   DAILY CLOSING REPORT — Print styles
+   ============================================================ */
+
+.daily-report {
+  width: 380px;
+  background: #fff;
+  color: #000;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 20px;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.daily-report-header { text-align: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #000; }
+.daily-report-title { font-size: 16px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; }
+.daily-report-date { font-size: 11px; color: #555; margin-top: 4px; }
+
+.daily-report-section { margin: 12px 0; }
+.daily-report-section-title {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  border-bottom: 1px dashed #bbb;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.daily-report-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 3px 0;
+  color: #222;
+}
+
+.daily-report-row.total {
+  font-weight: 900;
+  font-size: 14px;
+  border-top: 1px solid #000;
+  padding-top: 6px;
+  margin-top: 4px;
+  color: #000;
+}
+
+.daily-report-row.highlight { color: #000; font-weight: 700; }
+
+.daily-report-top-list { list-style: none; }
+
+.daily-report-top-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 3px 0;
+  border-bottom: 1px dotted #ddd;
+  color: #333;
+}
+
+.daily-report-footer {
+  text-align: center;
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 2px dashed #bbb;
+  font-size: 10px;
+  color: #777;
+}
+
+/* ============================================================
+   @PRINT MEDIA — applies when Print Receipt is clicked
+   ============================================================ */
+
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  body { background: #fff !important; }
+
+  .no-print, .sidebar, .main-content, .modal-header, .modal-footer { display: none !important; }
+
+  .modal-backdrop {
+    position: static !important;
+    background: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .modal {
+    border: none !important;
+    box-shadow: none !important;
+    max-height: none !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  .receipt-modal-body, .modal-body { padding: 0 !important; background: #fff !important; }
+
+  .receipt, .daily-report {
+    width: 100% !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    font-size: 11pt !important;
+  }
+
+  @page {
+    margin: 4mm;
+    size: 80mm auto;
+  }
+
+  @page.daily-report {
+    size: A4;
+    margin: 15mm;
+  }
+}

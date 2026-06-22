@@ -1,0 +1,20 @@
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Strict-Transport-Security = "max-age=31536000"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"

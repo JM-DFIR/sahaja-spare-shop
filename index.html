@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="carbon-red">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="description" content="Sahaja Motorcycle Spare Parts — Internal Shop Management Tool">
+
+  <!-- SEO / Security: block all search engines -->
+  <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
+  <meta name="googlebot" content="noindex, nofollow">
+
+  <!-- PWA -->
+  <meta name="theme-color" content="#e63946">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sahaja Shop">
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Favicon / Apple touch icon -->
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <title>Sahaja Spare Shop — Internal Tool</title>
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/pos.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/receipt-print.css">
+  <link rel="stylesheet" href="styles/mobile.css">
+
+  <!-- External libraries (CDN — load order matters) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- =========================================================
+       AUTH SCREEN
+  ========================================================== -->
+  <div id="auth-screen"></div>
+
+  <!-- =========================================================
+       MAIN APP (hidden until authenticated)
+  ========================================================== -->
+  <div id="app" class="hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Filled by app.js → renderSidebar() -->
+    </aside>
+
+    <!-- Main content area -->
+    <main class="main-content" id="main-content">
+      <!-- Filled by app.js → renderPage() -->
+    </main>
+
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- =========================================================
+       SCRIPTS — order is important
+  ========================================================== -->
+  <script src="supabase.js"></script>
+  <script src="receipt.js"></script>
+  <script src="app.js"></script>
+
+  <script>
+    // ---- Boot ----
+    document.addEventListener('DOMContentLoaded', () => {
+      App.init();
+    });
+
+    // ---- PWA Service Worker registration ----
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.log('SW registration skipped:', err);
+      });
+    }
+  </script>
+</body>
+</html>

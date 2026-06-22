@@ -1,0 +1,24 @@
+# Block all search engine crawlers — this is an internal tool
+User-agent: *
+Disallow: /
+
+# Explicitly block known bots
+User-agent: Googlebot
+Disallow: /
+
+User-agent: Bingbot
+Disallow: /
+
+User-agent: Slurp
+Disallow: /
+
+User-agent: DuckDuckBot
+Disallow: /
+
+User-agent: Baiduspider
+Disallow: /
+
+User-agent: YandexBot
+Disallow: /
+
+# No sitemap — intentionally unlisted

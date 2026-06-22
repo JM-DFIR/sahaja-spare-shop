@@ -1,0 +1,492 @@
+/* ============================================================
+   MOBILE RESPONSIVE — Sahaja Shop Tool
+   Complete rewrite for proper phone experience
+   ============================================================ */
+
+/* ============================================================
+   DESKTOP — hide all mobile-only elements
+   ============================================================ */
+@media (min-width: 769px) {
+  .mobile-topbar       { display: none !important; }
+  .mobile-bottom-nav   { display: none !important; }
+  .pos-mobile-tabs     { display: none !important; }
+  .cart-back-btn       { display: none !important; }
+}
+
+/* ============================================================
+   MOBILE — ≤ 768px
+   ============================================================ */
+@media (max-width: 768px) {
+
+  /* ---- 1. Core layout: hide sidebar, stack vertically ---- */
+  .sidebar {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+  }
+
+  #app {
+    flex-direction: column !important;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .main-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 58px; /* room for bottom nav */
+    width: 100% !important;
+  }
+
+  /* ---- 2. Mobile top bar ---- */
+  .mobile-topbar {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 50;
+    gap: 10px;
+  }
+
+  .mobile-topbar-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .mobile-topbar-badge {
+    width: 30px;
+    height: 30px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .mobile-topbar-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-topbar-time {
+    font-size: 13px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  /* ---- 3. Bottom navigation bar ---- */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 58px;
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--border);
+    z-index: 200;
+    padding: 0 2px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    gap: 2px;
+  }
+
+  .mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 6px 2px;
+    border-radius: 8px;
+    transition: color 0.15s ease;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    min-width: 0;
+  }
+
+  .mobile-nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .mobile-nav-item.active { color: var(--accent); }
+
+  .mobile-nav-badge {
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 18px);
+    background: var(--danger);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-nav-item { position: relative; }
+
+  /* ---- 4. Page header compact ---- */
+  .page-header {
+    padding: 10px 14px 0 !important;
+    flex-shrink: 0;
+  }
+
+  .page-header-row {
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    padding-bottom: 10px !important;
+    gap: 8px;
+  }
+
+  /* Hide the large live clock in page headers on mobile — topbar has it */
+  #header-live-time { display: none !important; }
+  #header-live-date { font-size: 10px !important; }
+
+  .page-title { font-size: 18px !important; }
+  .page-subtitle { font-size: 11px !important; }
+
+  .page-body {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px 12px !important;
+  }
+
+  /* ---- 5. Stat tiles: 2-col, no text overflow ---- */
+  .stat-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+
+  .stat-tile {
+    padding: 12px 10px !important;
+    overflow: hidden;
+  }
+
+  .stat-label {
+    font-size: 9px !important;
+    line-height: 1.2;
+    word-break: break-word;
+  }
+
+  .stat-value {
+    font-size: 16px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .stat-change { font-size: 10px !important; }
+
+  /* ---- 6. Dashboard grid stacks ---- */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+
+  /* Chart container — fixed height, full width */
+  .chart-container {
+    height: 200px !important;
+    overflow: hidden;
+  }
+
+  /* ---- 7. POS — Tab-based layout ---- */
+
+  /* POS occupies full remaining height */
+  .pos-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: unset !important;
+    height: 100% !important;
+    overflow: hidden !important;
+    position: relative;
+  }
+
+  /* Mobile tab bar */
+  .pos-mobile-tabs {
+    display: flex !important;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+
+  .pos-tab {
+    flex: 1;
+    padding: 11px 8px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .pos-tab svg { width: 16px; height: 16px; }
+
+  .pos-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: var(--accent-muted);
+  }
+
+  .pos-tab-badge {
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Show/hide panels based on active tab */
+  #pos-layout[data-tab="parts"] .pos-grid-panel  { display: flex !important; flex: 1; overflow: hidden; }
+  #pos-layout[data-tab="parts"] .pos-cart-panel  { display: none !important; }
+  #pos-layout[data-tab="cart"]  .pos-grid-panel  { display: none !important; }
+  #pos-layout[data-tab="cart"]  .pos-cart-panel  { display: flex !important; flex: 1; overflow: hidden; }
+
+  /* Parts grid — full width, 2 columns */
+  .pos-grid-panel {
+    flex-direction: column;
+    overflow: hidden;
+    width: 100%;
+    border-right: none !important;
+  }
+
+  .parts-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* Bigger tap area on part cards */
+  .part-card { touch-action: manipulation; }
+  .part-card-add {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  /* Cart panel — full width */
+  .pos-cart-panel {
+    width: 100% !important;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Cart back button — mobile only */
+  .cart-back-btn {
+    display: flex !important;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* Cart items area has proper scroll */
+  .cart-items {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0 !important;
+  }
+
+  /* Cart summary fits on screen */
+  .cart-summary {
+    flex-shrink: 0 !important;
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+
+  /* Larger qty buttons for touch */
+  .qty-btn {
+    width: 34px !important;
+    height: 34px !important;
+    font-size: 16px !important;
+  }
+
+  .qty-val {
+    width: 40px !important;
+    line-height: 34px !important;
+  }
+
+  /* Payment method buttons bigger */
+  .pay-method-btn {
+    padding: 10px 4px !important;
+    font-size: 11px !important;
+    min-height: 42px;
+  }
+
+  /* Process button — full width, prominent */
+  .process-btn {
+    padding: 14px !important;
+    font-size: 13px !important;
+    letter-spacing: 1.5px;
+    min-height: 48px;
+  }
+
+  /* ---- 8. Inventory table ---- */
+  .inventory-toolbar {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    padding: 10px 0;
+  }
+
+  .search-wrap { width: 100% !important; max-width: 100% !important; }
+  .filter-select { flex: 1; min-width: 100px; }
+
+  /* Horizontal scroll for table */
+  .table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius);
+  }
+
+  .inventory-table { min-width: 580px; }
+
+  /* ---- 9. Modals → bottom sheet ---- */
+  .modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .modal {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .modal-wide { width: 100% !important; max-width: 100% !important; }
+  .part-form-grid { grid-template-columns: 1fr !important; }
+
+  /* ---- 10. Credits page ---- */
+  .credit-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .credits-table { min-width: 560px; }
+
+  /* Filter pills scroll horizontally */
+  .filter-pills {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+  .filter-pills::-webkit-scrollbar { display: none; }
+
+  /* ---- 11. Reports ---- */
+  .reports-toolbar { flex-direction: column !important; gap: 10px !important; }
+  .reports-grid { grid-template-columns: 1fr !important; }
+  .date-range-group { flex-wrap: wrap !important; gap: 6px !important; }
+
+  /* ---- 12. Settings ---- */
+  .settings-layout { flex-direction: column !important; }
+  .settings-nav {
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    white-space: nowrap;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border);
+    min-width: 0;
+    gap: 0;
+    padding: 0 8px;
+  }
+  .settings-nav::-webkit-scrollbar { display: none; }
+  .settings-nav-item {
+    white-space: nowrap !important;
+    padding: 10px 14px !important;
+    border-left: none !important;
+    border-bottom: 2px solid transparent;
+    flex-shrink: 0;
+  }
+  .settings-nav-item.active { border-bottom-color: var(--accent) !important; }
+  .settings-section { padding: 14px 0 0 !important; }
+
+  /* ---- 13. Touch targets — min 44px ---- */
+  .btn, .icon-btn { min-height: 40px; }
+
+  .form-input, .form-select, .form-textarea {
+    font-size: 16px !important; /* prevents iOS auto-zoom */
+    min-height: 44px;
+  }
+
+  .search-input { font-size: 16px !important; }
+  .cart-remove { padding: 8px !important; }
+
+  /* ---- 14. New sale button on mobile ---- */
+  .new-sale-btn { display: none !important; } /* handled by bottom nav POS tab */
+}
+
+/* ============================================================
+   SMALL PHONES — ≤ 480px (Tecno, Samsung A-series, Infinix)
+   ============================================================ */
+@media (max-width: 480px) {
+  .page-title { font-size: 16px !important; }
+
+  .stat-value { font-size: 14px !important; }
+  .stat-label { font-size: 8px !important; }
+
+  .parts-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .part-card-name { font-size: 11px !important; }
+  .part-card-price { font-size: 13px !important; }
+  .part-card-img-placeholder { height: 70px !important; }
+  .part-card-img { height: 70px !important; }
+
+  .mobile-topbar-name { font-size: 11px !important; }
+  .mobile-topbar-time { font-size: 11px !important; }
+
+  .mobile-nav-item span { font-size: 8px !important; }
+
+  .process-btn { font-size: 12px !important; padding: 12px !important; }
+
+  .summary-row.total { font-size: 14px !important; }
+}
