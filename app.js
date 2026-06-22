@@ -2045,7 +2045,7 @@ const App = (() => {
     navigate,
     // POS
     filterPOSParts, setPOSCategory, addToCart, updateCartQty, removeFromCart,
-    setPayMethod, processSale,
+    setPayMethod, processSale, switchPOSTab,
     // Inventory
     filterInventory, showAddPartModal, showEditPartModal, previewPartImage,
     clearPartImage, updateMarginPreview, savePartForm, quickRestock, deletePart,
