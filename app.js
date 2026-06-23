@@ -2023,11 +2023,19 @@ const App = (() => {
           <button class="modal-close" onclick="App.closeModal()">${icons.close}</button>
         </div>
         <div class="modal-body">${body}</div>
-        <div class="modal-footer">
-          ${buttons.map(b => `<button class="btn ${b.class}" onclick='(${b.action})()'>${b.text}</button>`).join('')}
-        </div>
+        <div class="modal-footer" id="modal-footer-container"></div>
       </div>
     `;
+
+    const footer = modal.querySelector('#modal-footer-container');
+    buttons.forEach(b => {
+      const btn = document.createElement('button');
+      btn.className = `btn ${b.class}`;
+      btn.textContent = b.text;
+      btn.addEventListener('click', b.action);
+      footer.appendChild(btn);
+    });
+
     return modal;
   }
 
