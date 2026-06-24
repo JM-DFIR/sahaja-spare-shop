@@ -388,7 +388,11 @@ BEGIN
 
   -- Insert into public.operators
   INSERT INTO public.operators (id, name, email, role)
-  VALUES (v_user_id, p_name, p_email, p_role);
+  VALUES (v_user_id, p_name, p_email, p_role)
+  ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    email = EXCLUDED.email,
+    role = EXCLUDED.role;
 
   -- Insert into auth.identities to link login provider
   INSERT INTO auth.identities (
@@ -435,4 +439,52 @@ BEGIN
   RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Triggers for automatic Auth to Operator sync (for dashboard actions)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_name TEXT;
+  v_suffix INT := 1;
+BEGIN
+  v_name := COALESCE(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1));
+  
+  -- Ensure name is unique
+  WHILE EXISTS (SELECT 1 FROM public.operators WHERE name = v_name AND id != new.id) LOOP
+    v_name := COALESCE(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)) || '_' || v_suffix;
+    v_suffix := v_suffix + 1;
+  END LOOP;
+
+  INSERT INTO public.operators (id, name, email, role)
+  VALUES (
+    new.id,
+    v_name,
+    new.email,
+    COALESCE(new.raw_user_meta_data->>'role', 'employee')
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    role = COALESCE(public.operators.role, EXCLUDED.role);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+CREATE OR REPLACE FUNCTION public.handle_deleted_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  DELETE FROM public.operators WHERE id = old.id;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_deleted ON auth.users;
+CREATE TRIGGER on_auth_user_deleted
+  AFTER DELETE ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_deleted_user();
+
 
