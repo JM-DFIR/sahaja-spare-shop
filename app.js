@@ -388,7 +388,7 @@ const App = (() => {
           const btn = document.querySelector('#part-modal .btn-primary');
           if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
 
-          const { data: verified, error } = await DB.Operators.verifyPassword(state.operator.id, password);
+          const { data: verified, error } = await DB.Operators.verifyPassword(state.operator.email, password);
           if (error) {
             showToast('Verification error: ' + error.message, 'error');
             if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
@@ -2502,7 +2502,7 @@ const App = (() => {
 
           let verified = false;
           for (const owner of owners) {
-            const { data } = await DB.Operators.verifyPassword(owner.id, password);
+            const { data } = await DB.Operators.verifyPassword(owner.email, password);
             if (data) {
               verified = true;
               break;

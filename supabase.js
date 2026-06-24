@@ -722,24 +722,33 @@ const Operators = {
   },
 
   async create(operator) {
-    const { data, error } = await _supabase
-      .rpc('admin_create_user', {
-        p_name: operator.name,
-        p_email: operator.email,
-        p_password: operator.password,
-        p_role: operator.role
-      });
+    // Initialize a temporary Supabase client with persistSession: false to avoid signing out the current owner
+    const tempSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false }
+    });
+
+    const { data, error } = await tempSupabase.auth.signUp({
+      email: operator.email,
+      password: operator.password,
+      options: {
+        data: {
+          name: operator.name,
+          role: operator.role
+        }
+      }
+    });
+
     if (error) return { data: null, error };
-    return { data: { id: data, name: operator.name, email: operator.email, role: operator.role }, error: null };
+    return { data: { id: data.user.id, name: operator.name, email: operator.email, role: operator.role }, error: null };
   },
 
-  async verifyPassword(id, password) {
-    const { data, error } = await _supabase
-      .rpc('verify_operator_password', {
-        p_op_id: id,
-        p_password: password
-      });
-    return { data: !!data, error };
+  async verifyPassword(email, password) {
+    // Initialize a temporary Supabase client to check credentials without hijacking current session
+    const tempSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false }
+    });
+    const { data, error } = await tempSupabase.auth.signInWithPassword({ email, password });
+    return { data: !error, error };
   },
 
   async delete(id) {
