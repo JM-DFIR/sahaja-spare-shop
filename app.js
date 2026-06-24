@@ -331,7 +331,10 @@ const App = (() => {
     await loadBaseData();
 
     // Load operators
-    const { data: ops } = await DB.Operators.getAll();
+    const { data: ops, error: opsError } = await DB.Operators.getAll();
+    if (opsError) {
+      showToast('Error loading operators: ' + opsError.message, 'error');
+    }
     state.operators = ops || [];
 
     // Automatically resolve the operator profile based on the logged-in email
