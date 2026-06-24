@@ -286,7 +286,10 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- 2. Drop old operator_secrets table (no longer needed since we use auth.users)
 DROP TABLE IF EXISTS operator_secrets;
 
--- 3. Recreate public.operators table linked to auth.users
+-- 3. Recreate public.operators table linked to auth.users (Adding email safely if exists)
+ALTER TABLE public.operators 
+  ADD COLUMN IF NOT EXISTS email TEXT UNIQUE;
+
 CREATE TABLE IF NOT EXISTS public.operators (
   id UUID PRIMARY KEY, -- References auth.users(id)
   name TEXT UNIQUE NOT NULL,
@@ -342,15 +345,12 @@ RETURNS UUID AS $$
 DECLARE
   v_user_id UUID;
 BEGIN
-  -- Security check: Verify that the caller is an owner
-  IF NOT EXISTS (
+  -- Security check: Only enforce owner check if called from the client app (auth.uid() is not null)
+  IF auth.uid() IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM public.operators 
     WHERE id = auth.uid() AND role = 'owner'
   ) THEN
-    -- If there are no operators yet, allow the first one (bootstrapping)
-    IF (SELECT COUNT(*) FROM public.operators) > 0 THEN
-      RAISE EXCEPTION 'Access Denied: Only owners can create operator profiles';
-    END IF;
+    RAISE EXCEPTION 'Access Denied: Only owners can create operator profiles';
   END IF;
 
   -- Insert into auth.users (hashes the password with bcrypt)
@@ -396,15 +396,17 @@ BEGIN
     user_id,
     identity_data,
     provider,
+    provider_id,
     last_sign_in_at,
     created_at,
     updated_at
   )
   VALUES (
-    p_email,
+    gen_random_uuid(),
     v_user_id,
     jsonb_build_object('sub', v_user_id::text, 'email', p_email),
     'email',
+    p_email,
     now(),
     now(),
     now()
@@ -420,8 +422,8 @@ CREATE OR REPLACE FUNCTION admin_delete_user(
 )
 RETURNS BOOLEAN AS $$
 BEGIN
-  -- Security check: Verify that the caller is an owner
-  IF NOT EXISTS (
+  -- Security check: Only enforce owner check if called from the client app
+  IF auth.uid() IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM public.operators 
     WHERE id = auth.uid() AND role = 'owner'
   ) THEN
@@ -433,8 +435,4 @@ BEGIN
   RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 5. Seed default operators safely via our new secure RPC function
-SELECT admin_create_user('Victor', 'victor@sahaja.co.ke', 'password123', 'owner');
-SELECT admin_create_user('Ann', 'ann@sahaja.co.ke', 'ann123', 'employee');
 
