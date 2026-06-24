@@ -277,63 +277,40 @@ CREATE POLICY "Authenticated users can manage sourcing_logs"
 
 
 -- ============================================================
--- SAHAJA SECURITY MIGRATION — ALPHANUMERIC PASSWORDS
+-- SAHAJA SECURITY UPGRADE — SUPABASE AUTH OPERATOR LINK
 -- ============================================================
 
--- 1. Enable pgcrypto for bcrypt hashing
+-- 1. Enable pgcrypto for bcrypt password hashing
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 2. Create operators table if it doesn't exist, and drop PIN column if it does
-CREATE TABLE IF NOT EXISTS operators (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- 2. Drop old operator_secrets table (no longer needed since we use auth.users)
+DROP TABLE IF EXISTS operator_secrets;
+
+-- 3. Recreate public.operators table linked to auth.users
+CREATE TABLE IF NOT EXISTS public.operators (
+  id UUID PRIMARY KEY, -- References auth.users(id)
   name TEXT UNIQUE NOT NULL,
-  role TEXT NOT NULL DEFAULT 'employee',
+  email TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'employee', -- 'owner' | 'employee'
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE operators DROP COLUMN IF EXISTS pin;
+-- Enable RLS on operators
+ALTER TABLE public.operators ENABLE ROW LEVEL SECURITY;
 
-CREATE TABLE IF NOT EXISTS operator_secrets (
-  operator_id UUID PRIMARY KEY REFERENCES operators(id) ON DELETE CASCADE,
-  password_hash TEXT NOT NULL
-);
+-- Allow select for all authenticated users (to display staff names)
+DROP POLICY IF EXISTS "Allow select for authenticated users" ON public.operators;
+CREATE POLICY "Allow select for authenticated users"
+  ON public.operators FOR SELECT
+  TO authenticated
+  USING (true);
 
--- Enable RLS on secrets table
-ALTER TABLE operator_secrets ENABLE ROW LEVEL SECURITY;
+-- Allow all modifications only via security definer RPC functions
+DROP POLICY IF EXISTS "Restrict modifications to RPC" ON public.operators;
 
--- Deny all direct client-side CRUD operations on secrets table (fully locked down)
-DROP POLICY IF EXISTS "Deny all direct secrets access" ON operator_secrets;
--- Note: Having no policies on operator_secrets implicitly denies all operations.
+-- 4. Create secure RPC functions (marked SECURITY DEFINER to write to auth schema)
 
--- 3. Clear existing seeded operators to start clean
-TRUNCATE TABLE operators CASCADE;
-
--- 4. Create secure RPC management functions (SECURITY DEFINER bypasses RLS safely)
-
--- Function to create an operator profile
-CREATE OR REPLACE FUNCTION create_operator_profile(
-  p_name TEXT,
-  p_password TEXT,
-  p_role TEXT
-)
-RETURNS UUID AS $$
-DECLARE
-  v_op_id UUID;
-BEGIN
-  -- Insert into public operators table
-  INSERT INTO operators (name, role)
-  VALUES (p_name, p_role)
-  RETURNING id INTO v_op_id;
-
-  -- Insert bcrypt hashed password into secrets table
-  INSERT INTO operator_secrets (operator_id, password_hash)
-  VALUES (v_op_id, crypt(p_password, gen_salt('bf', 8)));
-
-  RETURN v_op_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to verify an operator's password
+-- Function to verify password against auth.users
 CREATE OR REPLACE FUNCTION verify_operator_password(
   p_op_id UUID,
   p_password TEXT
@@ -342,9 +319,9 @@ RETURNS BOOLEAN AS $$
 DECLARE
   v_hash TEXT;
 BEGIN
-  SELECT password_hash INTO v_hash 
-  FROM operator_secrets 
-  WHERE operator_id = p_op_id;
+  SELECT encrypted_password INTO v_hash 
+  FROM auth.users 
+  WHERE id = p_op_id;
   
   IF v_hash IS NULL THEN
     RETURN FALSE;
@@ -354,44 +331,110 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to delete an operator profile
-CREATE OR REPLACE FUNCTION delete_operator_profile(
+-- Function to create a Supabase Auth user & Operator profile (Restricted to Owners)
+CREATE OR REPLACE FUNCTION admin_create_user(
+  p_name TEXT,
+  p_email TEXT,
+  p_password TEXT,
+  p_role TEXT
+)
+RETURNS UUID AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  -- Security check: Verify that the caller is an owner
+  IF NOT EXISTS (
+    SELECT 1 FROM public.operators 
+    WHERE id = auth.uid() AND role = 'owner'
+  ) THEN
+    -- If there are no operators yet, allow the first one (bootstrapping)
+    IF (SELECT COUNT(*) FROM public.operators) > 0 THEN
+      RAISE EXCEPTION 'Access Denied: Only owners can create operator profiles';
+    END IF;
+  END IF;
+
+  -- Insert into auth.users (hashes the password with bcrypt)
+  INSERT INTO auth.users (
+    instance_id,
+    id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at,
+    confirmation_token,
+    recovery_token
+  )
+  VALUES (
+    '00000000-0000-0000-0000-000000000000',
+    gen_random_uuid(),
+    'authenticated',
+    'authenticated',
+    p_email,
+    crypt(p_password, gen_salt('bf', 10)),
+    now(),
+    '{"provider":"email","providers":["email"]}',
+    jsonb_build_object('name', p_name, 'role', p_role),
+    now(),
+    now(),
+    '',
+    ''
+  )
+  RETURNING id INTO v_user_id;
+
+  -- Insert into public.operators
+  INSERT INTO public.operators (id, name, email, role)
+  VALUES (v_user_id, p_name, p_email, p_role);
+
+  -- Insert into auth.identities to link login provider
+  INSERT INTO auth.identities (
+    id,
+    user_id,
+    identity_data,
+    provider,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    p_email,
+    v_user_id,
+    jsonb_build_object('sub', v_user_id::text, 'email', p_email),
+    'email',
+    now(),
+    now(),
+    now()
+  );
+
+  RETURN v_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to delete a user (Restricted to Owners)
+CREATE OR REPLACE FUNCTION admin_delete_user(
   p_op_id UUID
 )
 RETURNS BOOLEAN AS $$
 BEGIN
-  DELETE FROM operators WHERE id = p_op_id;
-  RETURN TRUE;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to change an operator's password
-CREATE OR REPLACE FUNCTION change_operator_password(
-  p_op_id UUID,
-  p_new_password TEXT,
-  p_current_password TEXT
-)
-RETURNS BOOLEAN AS $$
-DECLARE
-  v_verified BOOLEAN;
-BEGIN
-  -- Verify current password first
-  SELECT verify_operator_password(p_op_id, p_current_password) INTO v_verified;
-  
-  IF NOT v_verified THEN
-    RETURN FALSE;
+  -- Security check: Verify that the caller is an owner
+  IF NOT EXISTS (
+    SELECT 1 FROM public.operators 
+    WHERE id = auth.uid() AND role = 'owner'
+  ) THEN
+    RAISE EXCEPTION 'Access Denied: Only owners can delete operator profiles';
   END IF;
-  
-  -- Update with new bcrypt hashed password
-  UPDATE operator_secrets 
-  SET password_hash = crypt(p_new_password, gen_salt('bf', 8))
-  WHERE operator_id = p_op_id;
-  
+
+  -- Delete from auth.users (automatically cascades to operators and identities)
+  DELETE FROM auth.users WHERE id = p_op_id;
   RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 5. Seed default operators safely via our new secure RPC function
-SELECT create_operator_profile('Victor', 'password123', 'owner');
-SELECT create_operator_profile('Ann', 'ann123', 'employee');
+SELECT admin_create_user('Victor', 'victor@sahaja.co.ke', 'password123', 'owner');
+SELECT admin_create_user('Ann', 'ann@sahaja.co.ke', 'ann123', 'employee');
 

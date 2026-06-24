@@ -716,20 +716,21 @@ const Operators = {
   async getAll() {
     const { data, error } = await _supabase
       .from('operators')
-      .select('id, name, role, created_at')
+      .select('id, name, email, role, created_at')
       .order('name');
-    return { data, error };
+    return { data: data || [], error };
   },
 
   async create(operator) {
     const { data, error } = await _supabase
-      .rpc('create_operator_profile', {
+      .rpc('admin_create_user', {
         p_name: operator.name,
+        p_email: operator.email,
         p_password: operator.password,
         p_role: operator.role
       });
     if (error) return { data: null, error };
-    return { data: { id: data, name: operator.name, role: operator.role }, error: null };
+    return { data: { id: data, name: operator.name, email: operator.email, role: operator.role }, error: null };
   },
 
   async verifyPassword(id, password) {
@@ -741,24 +742,15 @@ const Operators = {
     return { data: !!data, error };
   },
 
-  async changePassword(id, newPassword, currentPassword) {
-    const { data, error } = await _supabase
-      .rpc('change_operator_password', {
-        p_op_id: id,
-        p_new_password: newPassword,
-        p_current_password: currentPassword
-      });
-    return { data: !!data, error };
-  },
-
   async delete(id) {
     const { data, error } = await _supabase
-      .rpc('delete_operator_profile', {
+      .rpc('admin_delete_user', {
         p_op_id: id
       });
     return { data: !!data, error };
   }
 };
+
 
 // ============================================================
 // SOURCING LOGS

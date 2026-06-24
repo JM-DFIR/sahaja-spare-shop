@@ -334,218 +334,90 @@ const App = (() => {
     const { data: ops } = await DB.Operators.getAll();
     state.operators = ops || [];
 
-    // Check if operator is already logged in
-    const savedOp = sessionStorage.getItem('current_operator');
-    if (savedOp) {
-      state.operator = JSON.parse(savedOp);
-      renderSidebar();
-      const isMobile = window.matchMedia('(max-width: 768px)').matches;
-      if (isMobile) {
-        renderMobileNav('dashboard');
+    // Automatically resolve the operator profile based on the logged-in email
+    if (state.user) {
+      const matchedOp = state.operators.find(op => op.email?.toLowerCase() === state.user.email?.toLowerCase() || op.id === state.user.id);
+      if (matchedOp) {
+        state.operator = matchedOp;
+        sessionStorage.setItem('current_operator', JSON.stringify(matchedOp));
+        
+        renderSidebar();
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        if (isMobile) {
+          renderMobileNav('dashboard');
+        }
+        navigate('dashboard');
+      } else {
+        showToast('Operator profile not found for ' + state.user.email, 'error');
+        await DB.Auth.signOut();
+        sessionStorage.removeItem('current_operator');
+        state.operator = null;
+        state.user = null;
+        document.getElementById('app').classList.add('hidden');
+        renderAuth();
       }
-      navigate('dashboard');
     } else {
-      showOperatorLogin();
-    }
-  }
-
-  function showOperatorLogin() {
-    // Hide main content layout elements
-    document.getElementById('sidebar')?.classList.add('hidden');
-    document.getElementById('mobile-topbar')?.remove();
-    document.getElementById('mobile-bottom-nav')?.remove();
-
-    const content = document.getElementById('main-content');
-    if (!content) return;
-
-    content.innerHTML = `
-      <div class="auth-wrapper" style="display:flex; justify-content:center; align-items:center; min-height:calc(100vh - 40px); width:100%; padding:20px; box-sizing:border-box">
-        <div class="auth-card" style="max-width:400px; width:100%">
-          <div class="auth-logo">
-            <div class="auth-logo-badge">SS</div>
-            <div>
-              <div class="auth-shop-name">${state.settings.shop_name || 'SAHAJA MOTORCYCLE LTD'}</div>
-              <div class="auth-shop-sub">Operator Verification</div>
-            </div>
-          </div>
-
-          <div id="operator-select-view">
-            <div class="auth-title">Select Operator</div>
-            <div class="auth-sub">Choose your profile to continue.</div>
-            <div class="operator-grid">
-              ${state.operators.map(op => `
-                <div class="operator-card" onclick="App.selectOperatorProfile('${op.id}')">
-                  <div class="operator-avatar">${op.name.slice(0, 2).toUpperCase()}</div>
-                  <div class="operator-name">${op.name}</div>
-                  <div class="operator-role">${op.role}</div>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-
-          <div id="operator-pin-view" class="hidden">
-            <button class="btn btn-secondary btn-sm" onclick="App.backToOperatorSelect()" style="margin-bottom: 16px; display: flex; align-items: center; gap: 4px;">
-              ← Back
-            </button>
-            <div class="auth-title" id="pin-prompt-title">Enter Password</div>
-            <div class="auth-sub">Enter your operator password to continue.</div>
-
-            <div class="password-entry-container" style="margin-top: 20px;">
-              <div class="form-group">
-                <input type="password" id="operator-password-input" class="form-input" placeholder="Enter secure password" maxlength="32" style="text-align:center; font-size:16px; letter-spacing:2px; height:44px; margin-bottom:12px;" onkeydown="if(event.key === 'Enter') App.submitOperatorPassword()">
-              </div>
-              <button class="btn btn-primary btn-block" onclick="App.submitOperatorPassword()" id="op-login-btn" style="height:44px; width:100%">Verify & Login</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function selectOperatorProfile(opId) {
-    const op = state.operators.find(o => o.id === opId);
-    if (!op) return;
-    state.selectedOperatorId = opId;
-
-    document.getElementById('operator-select-view').classList.add('hidden');
-    document.getElementById('operator-pin-view').classList.remove('hidden');
-    document.getElementById('pin-prompt-title').textContent = `Enter Password for ${op.name}`;
-    
-    // Clear password input and focus it
-    const pwdInput = document.getElementById('operator-password-input');
-    if (pwdInput) {
-      pwdInput.value = '';
-      setTimeout(() => pwdInput.focus(), 100);
-    }
-  }
-
-  function backToOperatorSelect() {
-    state.selectedOperatorId = null;
-    const pwdInput = document.getElementById('operator-password-input');
-    if (pwdInput) pwdInput.value = '';
-    document.getElementById('operator-pin-view').classList.add('hidden');
-    document.getElementById('operator-select-view').classList.remove('hidden');
-  }
-
-  async function submitOperatorPassword() {
-    if (!state.selectedOperatorId) return;
-    const op = state.operators.find(o => o.id === state.selectedOperatorId);
-    if (!op) return;
-
-    const pwdInput = document.getElementById('operator-password-input');
-    const password = pwdInput?.value;
-    if (!password) { showToast('Please enter your password', 'error'); return; }
-
-    const loginBtn = document.getElementById('op-login-btn');
-    if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = 'Verifying...'; }
-
-    const { data: verified, error } = await DB.Operators.verifyPassword(op.id, password);
-    if (error) {
-      showToast('Authentication error: ' + error.message, 'error');
-      if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Verify & Login'; }
-      return;
-    }
-
-    if (verified) {
-      state.operator = op;
-      sessionStorage.setItem('current_operator', JSON.stringify(op));
-      
-      // Show sidebar and nav
-      document.getElementById('sidebar')?.classList.remove('hidden');
-      renderSidebar();
-      
-      const isMobile = window.matchMedia('(max-width: 768px)').matches;
-      if (isMobile) {
-        renderMobileNav('dashboard');
-      }
-      navigate('dashboard');
-      showToast(`Welcome back, ${op.name}!`, 'success');
-    } else {
-      showToast('Incorrect password. Please try again.', 'error');
-      if (pwdInput) { pwdInput.value = ''; pwdInput.focus(); }
-      if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Verify & Login'; }
+      document.getElementById('app').classList.add('hidden');
+      renderAuth();
     }
   }
 
   function confirmSwitchOperator() {
-    if (confirm('Switch operator profile?')) {
-      sessionStorage.removeItem('current_operator');
-      state.operator = null;
-      showOperatorLogin();
-    }
+    confirmSignOut();
   }
 
   function showPinVerificationModal(onSuccess) {
-    let enteredPin = '';
-    const modal = createModal('Security Verification', `
-      <div class="pin-pad-container">
-        <div style="text-align:center; font-size:13px; color:var(--text-muted); margin-bottom:10px;">
-          Please enter your operator PIN to access secure customer records.
-        </div>
-        <div class="pin-display">
-          <div class="pin-dot" id="modal-dot-0"></div>
-          <div class="pin-dot" id="modal-dot-1"></div>
-          <div class="pin-dot" id="modal-dot-2"></div>
-          <div class="pin-dot" id="modal-dot-3"></div>
-        </div>
-        
-        <div class="pin-keyboard">
-          <button class="pin-btn" id="m-pin-1">1</button>
-          <button class="pin-btn" id="m-pin-2">2</button>
-          <button class="pin-btn" id="m-pin-3">3</button>
-          <button class="pin-btn" id="m-pin-4">4</button>
-          <button class="pin-btn" id="m-pin-5">5</button>
-          <button class="pin-btn" id="m-pin-6">6</button>
-          <button class="pin-btn" id="m-pin-7">7</button>
-          <button class="pin-btn" id="m-pin-8">8</button>
-          <button class="pin-btn" id="m-pin-9">9</button>
-          <button class="pin-btn action-btn" id="m-pin-clear">Clear</button>
-          <button class="pin-btn" id="m-pin-0">0</button>
-          <button class="pin-btn action-btn" id="m-pin-cancel">Cancel</button>
-        </div>
-      </div>
-    `, []);
-    
-    document.body.appendChild(modal);
-    
-    // Bind buttons programmatically
-    const updateModalDots = () => {
-      for (let i = 0; i < 4; i++) {
-        document.getElementById(`modal-dot-${i}`)?.classList.toggle('filled', i < enteredPin.length);
-      }
-    };
-    
-    const pressKey = (key) => {
-      if (key === 'clear') {
-        enteredPin = '';
-      } else if (key === 'cancel') {
-        closeModal();
-      } else {
-        if (enteredPin.length < 4) {
-          enteredPin += key;
-        }
-      }
-      updateModalDots();
-      
-      if (enteredPin.length === 4) {
-        // Verify PIN: must match logged-in operator PIN, or Owner PIN (9876)
-        const currentOp = state.operator;
-        if ((currentOp && currentOp.pin === enteredPin) || enteredPin === '9876') {
-          closeModal();
-          onSuccess();
-        } else {
-          showToast('Incorrect PIN', 'error');
-          enteredPin = '';
-          updateModalDots();
-        }
-      }
-    };
-    
-    for (let i = 0; i <= 9; i++) {
-      document.getElementById(`m-pin-${i}`)?.addEventListener('click', () => pressKey(String(i)));
+    if (!state.operator) {
+      showToast('No logged in operator', 'error');
+      return;
     }
-    document.getElementById('m-pin-clear')?.addEventListener('click', () => pressKey('clear'));
-    document.getElementById('m-pin-cancel')?.addEventListener('click', () => pressKey('cancel'));
+    const modal = createModal('Security Verification', `
+      <div style="font-size:13px; color:var(--text-muted); text-align:center; margin-bottom:12px">
+        Please enter your operator password to authorize this action.
+      </div>
+      <div class="form-group">
+        <input type="password" id="operator-verification-password-input" class="form-input" placeholder="Enter password" maxlength="32" style="text-align:center; font-size:16px; letter-spacing:2px; height:44px; margin-bottom:12px;">
+      </div>
+    `, [
+      { text: 'Cancel', class: 'btn-secondary', action: () => closeModal() },
+      { text: 'Verify', class: 'btn-primary', action: async () => {
+          const input = document.getElementById('operator-verification-password-input');
+          const password = input?.value;
+          if (!password) { showToast('Password is required', 'error'); return; }
+
+          const btn = document.querySelector('#part-modal .btn-primary');
+          if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
+
+          const { data: verified, error } = await DB.Operators.verifyPassword(state.operator.id, password);
+          if (error) {
+            showToast('Verification error: ' + error.message, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
+            return;
+          }
+
+          if (verified) {
+            closeModal();
+            onSuccess();
+          } else {
+            showToast('Incorrect password', 'error');
+            if (input) { input.value = ''; input.focus(); }
+            if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
+          }
+        }
+      }
+    ]);
+
+    document.body.appendChild(modal);
+
+    setTimeout(() => {
+      const input = document.getElementById('operator-verification-password-input');
+      input?.focus();
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          document.querySelector('#part-modal .btn-primary')?.click();
+        }
+      });
+    }, 100);
   }
 
   function navigateWithPIN(page) {
@@ -721,6 +593,9 @@ const App = (() => {
           <div>
             <div class="page-title">Overview</div>
             <div class="page-subtitle">${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}</div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:4px">
+              Welcome back, <strong style="color:var(--accent); font-weight:600">${sanitize(state.operator?.name || 'Operator')}</strong> (${(state.operator?.role || 'employee').toUpperCase()})
+            </div>
           </div>
           <div style="text-align:right">
             <div class="header-meta" id="header-live-date">${dateStr}</div>
@@ -2671,12 +2546,13 @@ const App = (() => {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Email</th>
                 <th>Role</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="operators-list-tbody">
-              <tr><td colspan="3">Loading operators...</td></tr>
+              <tr><td colspan="4">Loading operators...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2687,6 +2563,10 @@ const App = (() => {
             <div class="form-group">
               <label class="form-label">Operator Name *</label>
               <input type="text" id="op-new-name" class="form-input" placeholder="e.g. Victor">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email *</label>
+              <input type="email" id="op-new-email" class="form-input" placeholder="e.g. victor@sahaja.co.ke">
             </div>
             <div class="form-group">
               <label class="form-label">Password *</label>
@@ -2720,6 +2600,7 @@ const App = (() => {
       return `
         <tr>
           <td style="font-weight:600">${sanitize(op.name)}</td>
+          <td>${sanitize(op.email || '')}</td>
           <td><span class="badge ${op.role === 'owner' ? 'badge-credit' : 'badge-cash'}">${op.role}</span></td>
           <td>
             ${isProtected 
@@ -2729,28 +2610,31 @@ const App = (() => {
           </td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="3">No operators registered.</td></tr>';
+    }).join('') || '<tr><td colspan="4">No operators registered.</td></tr>';
   }
 
   async function addOperator() {
     const nameInput = document.getElementById('op-new-name');
+    const emailInput = document.getElementById('op-new-email');
     const pwdInput = document.getElementById('op-new-password');
     const roleInput = document.getElementById('op-new-role');
 
     const name = nameInput?.value?.trim();
+    const email = emailInput?.value?.trim();
     const password = pwdInput?.value;
     const role = roleInput?.value || 'employee';
 
-    if (!name || !password) { showToast('Please enter operator name and password', 'error'); return; }
+    if (!name || !email || !password) { showToast('Please enter operator name, email and password', 'error'); return; }
     if (password.length < 4 || password.length > 32) { showToast('Password must be between 4 and 32 characters', 'error'); return; }
 
     showOwnerPinVerificationModal(async () => {
-      const { error } = await DB.Operators.create({ name, password, role });
+      const { error } = await DB.Operators.create({ name, email, password, role });
       if (error) {
         showToast('Error creating operator: ' + error.message, 'error');
       } else {
         showToast(`Operator ${name} added!`, 'success');
         if (nameInput) nameInput.value = '';
+        if (emailInput) emailInput.value = '';
         if (pwdInput) pwdInput.value = '';
         await loadSettingsOperatorsTable();
       }
