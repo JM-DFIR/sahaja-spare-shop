@@ -117,6 +117,12 @@ const Receipt = {
         ${sale.customer_name ? `
           <hr class="receipt-divider">
           <div class="receipt-meta"><span>Customer:</span><span>${sale.customer_name}</span></div>
+          ${sale.customer_phone ? `<div class="receipt-meta"><span>Phone:</span><span>${sale.customer_phone}</span></div>` : ''}
+          ${sale.customer_location ? `<div class="receipt-meta"><span>Location:</span><span>${sale.customer_location}</span></div>` : ''}
+        ` : ''}
+
+        ${sale.operator_name ? `
+          <div class="receipt-meta"><span>Operator:</span><span>${sale.operator_name}</span></div>
         ` : ''}
 
         <div class="receipt-footer">

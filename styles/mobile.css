@@ -490,3 +490,39 @@
 
   .summary-row.total { font-size: 14px !important; }
 }
+
+@media (max-width: 768px) {
+  .mobile-topbar-settings-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition);
+  }
+  .mobile-topbar-settings-btn:active {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .mobile-topbar-settings-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  
+  /* Make customer detail layout responsive on mobile */
+  .customer-list-layout {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .customer-detail-panel {
+    margin-top: 16px;
+  }
+  .customer-summary-cards {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+}

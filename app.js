@@ -108,6 +108,10 @@ const App = (() => {
     selectedCategory: 'all',
     lowStockCount: 0,
     toastTimer: null,
+    currentSalesChannel: 'shop',
+    customerDatabase: [],
+    selectedCustomerKey: null,
+    enteredPin: '',
   };
 
   // ---- Toast ----
@@ -143,15 +147,20 @@ const App = (() => {
     const topbar = document.createElement('div');
     topbar.className = 'mobile-topbar';
     topbar.id = 'mobile-topbar';
+    const opInitials = state.operator?.name?.slice(0, 2).toUpperCase() || 'SS';
     topbar.innerHTML = `
-      <div class="mobile-topbar-logo">
-        <div class="mobile-topbar-badge">
-          <img src="logo.png" alt="Logo" class="logo-img" onload="this.closest('.mobile-topbar-badge')?.classList.add('has-logo')" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block'; this.closest('.mobile-topbar-badge')?.classList.remove('has-logo');">
-          <span style="display: none;">SS</span>
+      <div class="mobile-topbar-logo" onclick="App.confirmSwitchOperator()" title="Switch Operator">
+        <div class="mobile-topbar-badge" style="background:var(--accent); color:#fff; font-size:11px; font-weight:700">
+          ${opInitials}
         </div>
         <div class="mobile-topbar-name">Sahaja Shop</div>
       </div>
-      <div class="mobile-topbar-time" id="mobile-clock">--:--:-- --</div>
+      <div style="display:flex; align-items:center; gap:10px">
+        <div class="mobile-topbar-time" id="mobile-clock">--:--:-- --</div>
+        <button class="mobile-topbar-settings-btn" onclick="App.navigate('settings')">
+          ${icons.settings}
+        </button>
+      </div>
     `;
 
     // Bottom nav
@@ -318,15 +327,231 @@ const App = (() => {
     state.settings = settings || {};
     applyTheme(state.settings.theme || 'carbon-red');
 
-    // Render sidebar
-    renderSidebar();
-
     // Load initial data
     await loadBaseData();
 
-    // Navigate to dashboard
-    renderMobileNav('dashboard');
-    navigate('dashboard');
+    // Load operators
+    const { data: ops } = await DB.Operators.getAll();
+    state.operators = ops || [];
+
+    // Check if operator is already logged in
+    const savedOp = sessionStorage.getItem('current_operator');
+    if (savedOp) {
+      state.operator = JSON.parse(savedOp);
+      renderSidebar();
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+      if (isMobile) {
+        renderMobileNav('dashboard');
+      }
+      navigate('dashboard');
+    } else {
+      showOperatorLogin();
+    }
+  }
+
+  function showOperatorLogin() {
+    // Hide main content layout elements
+    document.getElementById('sidebar')?.classList.add('hidden');
+    document.getElementById('mobile-topbar')?.remove();
+    document.getElementById('mobile-bottom-nav')?.remove();
+
+    const content = document.getElementById('main-content');
+    if (!content) return;
+
+    content.innerHTML = `
+      <div class="auth-wrapper" style="display:flex; justify-content:center; align-items:center; min-height:calc(100vh - 40px); width:100%; padding:20px; box-sizing:border-box">
+        <div class="auth-card" style="max-width:400px; width:100%">
+          <div class="auth-logo">
+            <div class="auth-logo-badge">SS</div>
+            <div>
+              <div class="auth-shop-name">${state.settings.shop_name || 'SAHAJA MOTORCYCLE LTD'}</div>
+              <div class="auth-shop-sub">Operator Verification</div>
+            </div>
+          </div>
+
+          <div id="operator-select-view">
+            <div class="auth-title">Select Operator</div>
+            <div class="auth-sub">Choose your profile to continue.</div>
+            <div class="operator-grid">
+              ${state.operators.map(op => `
+                <div class="operator-card" onclick="App.selectOperatorProfile('${op.id}')">
+                  <div class="operator-avatar">${op.name.slice(0, 2).toUpperCase()}</div>
+                  <div class="operator-name">${op.name}</div>
+                  <div class="operator-role">${op.role}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div id="operator-pin-view" class="hidden">
+            <button class="btn btn-secondary btn-sm" onclick="App.backToOperatorSelect()" style="margin-bottom: 16px; display: flex; align-items: center; gap: 4px;">
+              ← Back
+            </button>
+            <div class="auth-title" id="pin-prompt-title">Enter Password</div>
+            <div class="auth-sub">Enter your operator password to continue.</div>
+
+            <div class="password-entry-container" style="margin-top: 20px;">
+              <div class="form-group">
+                <input type="password" id="operator-password-input" class="form-input" placeholder="Enter secure password" maxlength="32" style="text-align:center; font-size:16px; letter-spacing:2px; height:44px; margin-bottom:12px;" onkeydown="if(event.key === 'Enter') App.submitOperatorPassword()">
+              </div>
+              <button class="btn btn-primary btn-block" onclick="App.submitOperatorPassword()" id="op-login-btn" style="height:44px; width:100%">Verify & Login</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function selectOperatorProfile(opId) {
+    const op = state.operators.find(o => o.id === opId);
+    if (!op) return;
+    state.selectedOperatorId = opId;
+
+    document.getElementById('operator-select-view').classList.add('hidden');
+    document.getElementById('operator-pin-view').classList.remove('hidden');
+    document.getElementById('pin-prompt-title').textContent = `Enter Password for ${op.name}`;
+    
+    // Clear password input and focus it
+    const pwdInput = document.getElementById('operator-password-input');
+    if (pwdInput) {
+      pwdInput.value = '';
+      setTimeout(() => pwdInput.focus(), 100);
+    }
+  }
+
+  function backToOperatorSelect() {
+    state.selectedOperatorId = null;
+    const pwdInput = document.getElementById('operator-password-input');
+    if (pwdInput) pwdInput.value = '';
+    document.getElementById('operator-pin-view').classList.add('hidden');
+    document.getElementById('operator-select-view').classList.remove('hidden');
+  }
+
+  async function submitOperatorPassword() {
+    if (!state.selectedOperatorId) return;
+    const op = state.operators.find(o => o.id === state.selectedOperatorId);
+    if (!op) return;
+
+    const pwdInput = document.getElementById('operator-password-input');
+    const password = pwdInput?.value;
+    if (!password) { showToast('Please enter your password', 'error'); return; }
+
+    const loginBtn = document.getElementById('op-login-btn');
+    if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = 'Verifying...'; }
+
+    const { data: verified, error } = await DB.Operators.verifyPassword(op.id, password);
+    if (error) {
+      showToast('Authentication error: ' + error.message, 'error');
+      if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Verify & Login'; }
+      return;
+    }
+
+    if (verified) {
+      state.operator = op;
+      sessionStorage.setItem('current_operator', JSON.stringify(op));
+      
+      // Show sidebar and nav
+      document.getElementById('sidebar')?.classList.remove('hidden');
+      renderSidebar();
+      
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+      if (isMobile) {
+        renderMobileNav('dashboard');
+      }
+      navigate('dashboard');
+      showToast(`Welcome back, ${op.name}!`, 'success');
+    } else {
+      showToast('Incorrect password. Please try again.', 'error');
+      if (pwdInput) { pwdInput.value = ''; pwdInput.focus(); }
+      if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Verify & Login'; }
+    }
+  }
+
+  function confirmSwitchOperator() {
+    if (confirm('Switch operator profile?')) {
+      sessionStorage.removeItem('current_operator');
+      state.operator = null;
+      showOperatorLogin();
+    }
+  }
+
+  function showPinVerificationModal(onSuccess) {
+    let enteredPin = '';
+    const modal = createModal('Security Verification', `
+      <div class="pin-pad-container">
+        <div style="text-align:center; font-size:13px; color:var(--text-muted); margin-bottom:10px;">
+          Please enter your operator PIN to access secure customer records.
+        </div>
+        <div class="pin-display">
+          <div class="pin-dot" id="modal-dot-0"></div>
+          <div class="pin-dot" id="modal-dot-1"></div>
+          <div class="pin-dot" id="modal-dot-2"></div>
+          <div class="pin-dot" id="modal-dot-3"></div>
+        </div>
+        
+        <div class="pin-keyboard">
+          <button class="pin-btn" id="m-pin-1">1</button>
+          <button class="pin-btn" id="m-pin-2">2</button>
+          <button class="pin-btn" id="m-pin-3">3</button>
+          <button class="pin-btn" id="m-pin-4">4</button>
+          <button class="pin-btn" id="m-pin-5">5</button>
+          <button class="pin-btn" id="m-pin-6">6</button>
+          <button class="pin-btn" id="m-pin-7">7</button>
+          <button class="pin-btn" id="m-pin-8">8</button>
+          <button class="pin-btn" id="m-pin-9">9</button>
+          <button class="pin-btn action-btn" id="m-pin-clear">Clear</button>
+          <button class="pin-btn" id="m-pin-0">0</button>
+          <button class="pin-btn action-btn" id="m-pin-cancel">Cancel</button>
+        </div>
+      </div>
+    `, []);
+    
+    document.body.appendChild(modal);
+    
+    // Bind buttons programmatically
+    const updateModalDots = () => {
+      for (let i = 0; i < 4; i++) {
+        document.getElementById(`modal-dot-${i}`)?.classList.toggle('filled', i < enteredPin.length);
+      }
+    };
+    
+    const pressKey = (key) => {
+      if (key === 'clear') {
+        enteredPin = '';
+      } else if (key === 'cancel') {
+        closeModal();
+      } else {
+        if (enteredPin.length < 4) {
+          enteredPin += key;
+        }
+      }
+      updateModalDots();
+      
+      if (enteredPin.length === 4) {
+        // Verify PIN: must match logged-in operator PIN, or Owner PIN (9876)
+        const currentOp = state.operator;
+        if ((currentOp && currentOp.pin === enteredPin) || enteredPin === '9876') {
+          closeModal();
+          onSuccess();
+        } else {
+          showToast('Incorrect PIN', 'error');
+          enteredPin = '';
+          updateModalDots();
+        }
+      }
+    };
+    
+    for (let i = 0; i <= 9; i++) {
+      document.getElementById(`m-pin-${i}`)?.addEventListener('click', () => pressKey(String(i)));
+    }
+    document.getElementById('m-pin-clear')?.addEventListener('click', () => pressKey('clear'));
+    document.getElementById('m-pin-cancel')?.addEventListener('click', () => pressKey('cancel'));
+  }
+
+  function navigateWithPIN(page) {
+    showPinVerificationModal(() => {
+      navigate(page);
+    });
   }
 
   async function loadBaseData() {
@@ -356,10 +581,9 @@ const App = (() => {
 
   function renderSidebar() {
     const s = state.settings;
-    const user = state.user;
-    const initials = user?.email?.slice(0, 2).toUpperCase() || 'SS';
-    const email = user?.email || '';
-    const role = email.includes('owner') ? 'Owner' : 'Employee';
+    const operatorName = state.operator?.name || 'No Operator';
+    const operatorRole = state.operator?.role || 'Staff';
+    const opInitials = operatorName.slice(0, 2).toUpperCase();
 
     document.getElementById('sidebar').innerHTML = `
       <div class="sidebar-logo">
@@ -381,6 +605,7 @@ const App = (() => {
         <div class="nav-item" data-page="inventory" onclick="App.navigate('inventory')">${icons.inventory} Inventory <span id="low-stock-badge" class="nav-badge hidden">${state.lowStockCount}</span></div>
         <div class="nav-item" data-page="pos" onclick="App.navigate('pos')">${icons.pos} Sales POS</div>
         <div class="nav-item" data-page="credits" onclick="App.navigate('credits')">${icons.credit} Credit Log</div>
+        <div class="nav-item" data-page="customers" onclick="App.navigateWithPIN('customers')">${icons.user} Customers</div>
 
         <div class="section-label">Analytics</div>
         <div class="nav-item" data-page="reports" onclick="App.navigate('reports')">${icons.reports} Reports</div>
@@ -393,13 +618,13 @@ const App = (() => {
         <div class="sidebar-clock">
           <span>🕐</span><span class="sidebar-clock-time" id="sidebar-clock-time">--:--:-- --</span>
         </div>
-        <div class="sidebar-user" onclick="App.confirmSignOut()">
-          <div class="user-avatar">${initials}</div>
+        <div class="sidebar-user" onclick="App.confirmSwitchOperator()">
+          <div class="user-avatar" style="background:var(--accent); color:#fff">${opInitials}</div>
           <div class="user-info">
-            <div class="user-name">${email.split('@')[0]}</div>
-            <div class="user-role">${role}</div>
+            <div class="user-name">${operatorName}</div>
+            <div class="user-role">${operatorRole.toUpperCase()}</div>
           </div>
-          <span class="logout-icon">${icons.logout}</span>
+          <span class="logout-icon" title="Switch Operator">${icons.logout}</span>
         </div>
       </div>
     `;
@@ -427,6 +652,7 @@ const App = (() => {
       case 'credits': renderCredits(content); break;
       case 'reports': renderReports(content); break;
       case 'settings': renderSettings(content); break;
+      case 'customers': renderCustomers(content); break;
     }
   }
 
@@ -476,7 +702,7 @@ const App = (() => {
       const suffix = items.length > 1 ? ` +${items.length - 1}` : '';
       const payBadge = sale.payment_method === 'credit' ? 'badge-credit' : sale.payment_method === 'mpesa' ? 'badge-mpesa' : 'badge-cash';
       return `
-        <div class="recent-sale-item">
+        <div class="recent-sale-item" style="cursor:pointer" onclick="App.viewTransactionDetails('${sale.id}')">
           <div class="recent-sale-info">
             <div class="recent-sale-name">${sanitize(firstName)}${suffix}</div>
             <div class="recent-sale-meta">${sale.receipt_number || ''} • ${new Date(sale.created_at).toLocaleTimeString('en-KE', { hour:'2-digit', minute:'2-digit' })}</div>
@@ -664,6 +890,14 @@ const App = (() => {
             <div class="page-title">Point of Sale</div>
             <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
               <span class="live-indicator"><span class="live-dot"></span> Live Auto-Deduct Active</span>
+              <div class="pos-channel-toggle">
+                <button class="channel-btn ${state.currentSalesChannel === 'shop' ? 'active' : ''}" id="channel-shop" onclick="App.setSalesChannel('shop')">
+                  Shop Stock
+                </button>
+                <button class="channel-btn ${state.currentSalesChannel === 'ground' ? 'active' : ''}" id="channel-ground" onclick="App.setSalesChannel('ground')">
+                  Ground Stock
+                </button>
+              </div>
             </div>
           </div>
           <div style="text-align:right;">
@@ -714,7 +948,7 @@ const App = (() => {
             <span class="cart-count" id="cart-count">0 Items</span>
             <!-- Mobile back button -->
             <button class="cart-back-btn" onclick="App.switchPOSTab('parts')">
-              ← Parts
+              ← Back
             </button>
           </div>
           <div class="cart-items" id="cart-items">
@@ -745,9 +979,10 @@ const App = (() => {
               <input type="text" id="mpesa-txn-input" class="form-input" placeholder="MPESA TXN code e.g. QK7X3AB9P" maxlength="12" style="text-transform:uppercase; font-family:var(--font-mono)">
             </div>
 
-            <div id="credit-customer-wrap" class="hidden">
-              <input type="text" id="credit-customer-name" class="form-input mb-2" placeholder="Customer name">
-              <input type="tel" id="credit-customer-phone" class="form-input" placeholder="Customer phone e.g. 0712 345 678">
+            <div id="credit-customer-wrap" style="margin-top: 10px;">
+              <input type="text" id="credit-customer-name" class="form-input mb-2" placeholder="Customer name (Optional)">
+              <input type="tel" id="credit-customer-phone" class="form-input mb-2" placeholder="Customer phone e.g. 0712 345 678">
+              <input type="text" id="credit-customer-location" class="form-input" placeholder="Customer location (Optional)">
             </div>
 
             <button class="process-btn mt-3" id="process-btn" onclick="App.processSale()" disabled>
@@ -770,19 +1005,23 @@ const App = (() => {
       return `<div class="empty-state" style="grid-column:1/-1"><div class="text-muted">No parts found</div></div>`;
     }
     return parts.map(part => {
-      const status = stockStatus(part);
-      const isOut = status === 'out';
+      const channel = state.currentSalesChannel || 'shop';
+      const qty = channel === 'ground' ? (part.ground_qty ?? 0) : (part.shop_qty ?? 0);
+      const isOut = qty <= 0;
+      const isLow = qty > 0 && qty <= (part.min_stock_threshold || 5);
+      const status = isOut ? 'out' : isLow ? 'low' : 'good';
+      
       const imgEl = part.image_url
         ? `<img class="part-card-img" src="${part.image_url}" alt="${part.name}" loading="lazy">`
         : `<div class="part-card-img-placeholder">${icons.image}</div>`;
 
       return `
-        <div class="part-card ${isOut ? 'out-of-stock' : ''}" onclick="${isOut ? '' : `App.addToCart('${part.id}')`}">
+        <div class="part-card ${isOut ? 'out-of-stock' : ''}" onclick="App.addToCart('${part.id}')">
           ${imgEl}
           <div class="part-card-body">
             <div class="part-card-top">
               <span class="badge badge-category" style="font-size:9px">${part.category || 'PART'}</span>
-              ${stockDot(part)}
+              <span class="stock-dot ${status}" title="${qty} units left in ${channel}"></span>
             </div>
             <div class="part-card-name">${sanitize(part.name)}</div>
             <div class="part-card-sku">${sanitize(part.sku)}</div>
@@ -791,7 +1030,7 @@ const App = (() => {
               <button class="part-card-add" onclick="event.stopPropagation(); App.addToCart('${part.id}')">${icons.plus}</button>
             </div>
           </div>
-          ${isOut ? `<div class="out-overlay"><div class="out-label">Out of Stock</div></div>` : ''}
+          ${isOut ? `<div class="out-overlay" style="pointer-events: none;"><div class="out-label">Out of Stock (Can Source)</div></div>` : ''}
         </div>
       `;
     }).join('');
@@ -905,7 +1144,109 @@ const App = (() => {
       document.getElementById(`pay-${m}`)?.classList.toggle('active', m === method);
     });
     document.getElementById('mpesa-txn-wrap')?.classList.toggle('hidden', method !== 'mpesa');
-    document.getElementById('credit-customer-wrap')?.classList.toggle('hidden', method !== 'credit');
+    
+    const nameInput = document.getElementById('credit-customer-name');
+    if (nameInput) {
+      if (method === 'credit') {
+        nameInput.placeholder = 'Customer name * (Required)';
+      } else {
+        nameInput.placeholder = 'Customer name (Optional)';
+      }
+    }
+  }
+
+  function showSourcingModal(shortItems, onProceed) {
+    const formHTML = shortItems.map((si, index) => `
+      <div class="sourcing-item-form" data-index="${index}" data-part-id="${si.part.id}" data-shortage="${si.shortage}">
+        <div class="sourcing-item-title">
+          <span>${sanitize(si.part.name)}</span>
+          <span style="color:var(--danger)">Shortage: ${si.shortage} units (Order: ${si.item.quantity}, Stock: ${si.available})</span>
+        </div>
+        <div class="sourcing-form-grid">
+          <div class="form-group">
+            <label class="form-label" style="font-size:10px">Sourcing Shop *</label>
+            <input type="text" class="form-input src-shop" placeholder="e.g. Grogan Road Spares" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-size:10px">Cost Price (Per Unit) *</label>
+            <input type="number" class="form-input src-cost" placeholder="0.00" min="0" step="0.01" value="${si.part.buying_price || ''}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-size:10px">Payment Status *</label>
+            <select class="form-select src-status">
+              <option value="paid">Fully Paid</option>
+              <option value="partial">Partially Paid</option>
+              <option value="credit">On Credit</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-size:10px">Payment Method *</label>
+            <select class="form-select src-method">
+              <option value="cash">Cash</option>
+              <option value="mpesa">Mpesa</option>
+              <option value="credit">Credit / None</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    const modal = createModal('Out-of-Stock Sourcing Details', `
+      <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:12px">
+        Some items exceed available stock. Please log where the extra items are being sourced from for internal bookkeeping.
+      </div>
+      <div style="max-height: 350px; overflow-y: auto;">
+        ${formHTML}
+      </div>
+    `, [
+      { text: 'Cancel', class: 'btn-secondary', action: () => {
+          closeModal();
+          const btn = document.getElementById('process-btn');
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `${icons.pos} Process Sale`;
+          }
+        }
+      },
+      { text: 'Save & Complete Sale', class: 'btn-primary', action: () => {
+          const forms = document.querySelectorAll('.sourcing-item-form');
+          let valid = true;
+          const sourcingDetails = [];
+
+          forms.forEach(f => {
+            const shop = f.querySelector('.src-shop').value.trim();
+            const cost = parseFloat(f.querySelector('.src-cost').value);
+            const status = f.querySelector('.src-status').value;
+            const method = f.querySelector('.src-method').value;
+            const partId = f.dataset.partId;
+            const shortage = parseInt(f.dataset.shortage);
+
+            if (!shop || isNaN(cost) || cost < 0) {
+              valid = false;
+            } else {
+              sourcingDetails.push({
+                part_id: partId,
+                quantity: shortage,
+                sourcing_shop: shop,
+                cost_price: cost,
+                payment_status: status,
+                payment_method: method
+              });
+            }
+          });
+
+          if (!valid) {
+            showToast('Please fill out all sourcing details', 'error');
+            return;
+          }
+
+          closeModal();
+          onProceed(sourcingDetails);
+        }
+      }
+    ]);
+
+    document.body.appendChild(modal);
   }
 
   async function processSale() {
@@ -919,50 +1260,109 @@ const App = (() => {
     const mpesaTxn = document.getElementById('mpesa-txn-input')?.value?.trim().toUpperCase() || null;
     const customerName = document.getElementById('credit-customer-name')?.value?.trim() || null;
     const customerPhone = document.getElementById('credit-customer-phone')?.value?.trim() || null;
+    const customerLocation = document.getElementById('credit-customer-location')?.value?.trim() || null;
 
-    const sale = {
-      total_amount: subtotal,
-      payment_method: state.cartPayment,
-      receipt_number: receiptNum,
-      mpesa_txn_code: state.cartPayment === 'mpesa' ? mpesaTxn : null,
-      customer_name: customerName,
-      created_at: new Date().toISOString()
-    };
-
-    const { data: saleData, error } = await DB.Sales.create(sale, state.cart);
-
-    if (error) {
-      showToast('Error recording sale: ' + error.message, 'error');
+    if (state.cartPayment === 'credit' && !customerName) {
+      showToast('Customer name is required for credit sales', 'error');
       btn.disabled = false;
       btn.innerHTML = `${icons.pos} Process Sale`;
       return;
     }
 
-    // If credit, create credit record
-    if (state.cartPayment === 'credit' && customerName) {
-      await DB.Credits.create({
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        amount_owed: subtotal,
-        original_amount: subtotal,
-        status: 'pending',
-        payment_history: [],
-        sale_id: saleData.id
-      });
+    // Sourcing check
+    const shortItems = [];
+    for (const item of state.cart) {
+      const part = state.parts.find(p => p.id === item.part_id);
+      if (part) {
+        const channelQty = (state.currentSalesChannel === 'ground') ? (part.ground_qty || 0) : (part.shop_qty || 0);
+        if (item.quantity > channelQty) {
+          shortItems.push({
+            item: item,
+            part: part,
+            available: channelQty,
+            shortage: item.quantity - channelQty
+          });
+        }
+      }
     }
 
-    // Refresh parts (stock updated)
-    const { data: parts } = await DB.Parts.getAll();
-    state.parts = parts || [];
-    state.lowStockCount = state.parts.filter(p => stockStatus(p) !== 'good').length;
+    const proceedWithSale = async (sourcingList = []) => {
+      sourcingList.forEach(detail => {
+        const item = state.cart.find(i => i.part_id === detail.part_id);
+        if (item) {
+          item.sourcing = detail;
+        }
+      });
 
-    showToast(`Sale recorded! ${receiptNum}`, 'success');
+      const sale = {
+        total_amount: subtotal,
+        payment_method: state.cartPayment,
+        receipt_number: receiptNum,
+        mpesa_txn_code: state.cartPayment === 'mpesa' ? mpesaTxn : null,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        customer_location: customerLocation,
+        operator_name: state.operator?.name || 'Unknown',
+        sales_channel: state.currentSalesChannel || 'shop',
+        created_at: new Date().toISOString()
+      };
 
-    // Show receipt modal
-    showReceiptModal(saleData, state.cart, receiptNum);
+      const { data: saleData, error } = await DB.Sales.create(sale, state.cart);
+
+      if (error) {
+        showToast('Error recording sale: ' + error.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = `${icons.pos} Process Sale`;
+        return;
+      }
+
+      // If credit, create credit record
+      if (state.cartPayment === 'credit' && customerName) {
+        await DB.Credits.create({
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          amount_owed: subtotal,
+          original_amount: subtotal,
+          status: 'pending',
+          payment_history: [],
+          sale_id: saleData.id
+        });
+      }
+
+      // Refresh parts (stock updated)
+      const { data: parts } = await DB.Parts.getAll();
+      state.parts = parts || [];
+      state.lowStockCount = state.parts.filter(p => stockStatus(p) !== 'good').length;
+
+      showToast(`Sale recorded! ${receiptNum}`, 'success');
+
+      // Show receipt modal
+      showReceiptModal(saleData, state.cart, receiptNum);
+
+      // Clear cart
+      state.cart = [];
+      state.cartPayment = 'cash';
+      updateCart();
+
+      // Reset fields
+      const nameInput = document.getElementById('credit-customer-name');
+      if (nameInput) nameInput.value = '';
+      const phoneInput = document.getElementById('credit-customer-phone');
+      if (phoneInput) phoneInput.value = '';
+      const locInput = document.getElementById('credit-customer-location');
+      if (locInput) locInput.value = '';
+      const mpesaInput = document.getElementById('mpesa-txn-input');
+      if (mpesaInput) mpesaInput.value = '';
+    };
+
+    if (shortItems.length > 0) {
+      showSourcingModal(shortItems, proceedWithSale);
+    } else {
+      await proceedWithSale();
+    }
   }
 
-  function showReceiptModal(sale, items, receiptNum) {
+  function showReceiptModal(sale, items, receiptNum, isViewOnly = false) {
     const s = state.settings;
     const receiptHTML = Receipt.generateReceiptHTML(
       { ...sale, receipt_number: receiptNum },
@@ -973,22 +1373,107 @@ const App = (() => {
     const modal = document.createElement('div');
     modal.className = 'modal-backdrop';
     modal.id = 'receipt-modal';
+    
+    // Add Share PDF button for mobile
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const shareBtn = isMobile ? `
+      <button class="btn btn-secondary" onclick="App.shareReceiptPDF('${sale.id || ''}', '${receiptNum}')">
+        ${icons.download} Share PDF
+      </button>
+    ` : '';
+    
+    const title = isViewOnly ? `Transaction Details — ${receiptNum}` : `Sale Complete — ${receiptNum}`;
+    const closeAction = isViewOnly 
+      ? `document.getElementById('receipt-modal').remove()` 
+      : `document.getElementById('receipt-modal').remove(); App.navigate('pos')`;
+
+    const buttonLabel = isViewOnly ? 'Close' : 'New Sale';
+
     modal.innerHTML = `
       <div class="modal modal-wide">
         <div class="modal-header">
-          <div class="modal-title">Sale Complete — ${receiptNum}</div>
-          <button class="modal-close no-print" onclick="document.getElementById('receipt-modal').remove(); App.navigate('pos')">${icons.close}</button>
+          <div class="modal-title">${title}</div>
+          <button class="modal-close no-print" onclick="${closeAction}">${icons.close}</button>
         </div>
         <div class="receipt-modal-body">
           ${receiptHTML}
         </div>
-        <div class="receipt-actions no-print">
-          <button class="btn btn-secondary" onclick="document.getElementById('receipt-modal').remove(); App.navigate('pos')">New Sale</button>
+        <div class="receipt-actions no-print" style="gap:8px">
+          <button class="btn btn-secondary" onclick="${closeAction}">${buttonLabel}</button>
+          ${shareBtn}
           <button class="btn btn-primary" onclick="window.print()">${icons.print} Print Receipt</button>
         </div>
       </div>
     `;
     document.body.appendChild(modal);
+  }
+
+  function setSalesChannel(channel) {
+    state.currentSalesChannel = channel;
+    document.getElementById('channel-shop')?.classList.toggle('active', channel === 'shop');
+    document.getElementById('channel-ground')?.classList.toggle('active', channel === 'ground');
+    
+    // Refresh POS Browse parts grid
+    applyPOSFilter();
+  }
+
+  async function viewTransactionDetails(saleId) {
+    showPinVerificationModal(async () => {
+      const { data: sale } = await DB.Sales.getSaleWithItems(saleId);
+      if (!sale) { showToast('Sale details not found', 'error'); return; }
+      showReceiptModal(sale, sale.sale_items, sale.receipt_number, true);
+    });
+  }
+
+  function shareReceiptPDF(saleId, receiptNum) {
+    const element = document.getElementById('receipt-printable');
+    if (!element) { showToast('Receipt preview not found', 'error'); return; }
+    
+    showToast('Generating PDF...', 'info');
+    
+    const opt = {
+      margin:       0.2,
+      filename:     `receipt-${receiptNum}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2 },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+    
+    html2pdf().set(opt).from(element).outputPdf('blob').then(async (blob) => {
+      const file = new File([blob], `receipt-${receiptNum}.pdf`, { type: 'application/pdf' });
+      
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `Sahaja Spare Shop Receipt ${receiptNum}`,
+            text: `Receipt for purchase ${receiptNum} at Sahaja Motorcycle Spare Parts.`
+          });
+          showToast('Receipt shared successfully', 'success');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            showToast('Sharing failed, downloading PDF', 'warning');
+            triggerPDFDownload(blob, `receipt-${receiptNum}.pdf`);
+          }
+        }
+      } else {
+        showToast('Share not supported, downloading PDF', 'info');
+        triggerPDFDownload(blob, `receipt-${receiptNum}.pdf`);
+      }
+    }).catch(err => {
+      showToast('PDF generation error: ' + err.message, 'error');
+    });
+  }
+
+  function triggerPDFDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   // ============================================================
@@ -1004,6 +1489,7 @@ const App = (() => {
             <div class="page-subtitle">Manage spare parts, stock levels, and pricing.</div>
           </div>
           <div style="display:flex;gap:10px">
+            <button class="btn btn-secondary" onclick="App.showTransferStockModal()">Transfer Stock</button>
             <button class="btn btn-secondary" onclick="App.exportInventoryCSV()">${icons.download} Export</button>
             <button class="btn btn-primary" onclick="App.showAddPartModal()">${icons.plus} Add Part</button>
           </div>
@@ -1040,7 +1526,9 @@ const App = (() => {
                   <th></th>
                   <th>Part Name & Category</th>
                   <th>SKU / P.N</th>
-                  <th>Stock Qty</th>
+                  <th style="text-align:center">Shop Qty</th>
+                  <th style="text-align:center">Ground Qty</th>
+                  <th style="text-align:center">Total Stock</th>
                   <th>Unit Price</th>
                   <th>Buying Price</th>
                   <th>Supplier</th>
@@ -1066,7 +1554,7 @@ const App = (() => {
 
   function renderInventoryRows(parts) {
     if (!parts || parts.length === 0) {
-      return `<tr><td colspan="9"><div class="empty-state">No parts found. <button class="btn btn-primary btn-sm mt-3" onclick="App.showAddPartModal()">Add first part</button></div></td></tr>`;
+      return `<tr><td colspan="11"><div class="empty-state">No parts found. <button class="btn btn-primary btn-sm mt-3" onclick="App.showAddPartModal()">Add first part</button></div></td></tr>`;
     }
     return parts.map(part => {
       const status = stockStatus(part);
@@ -1085,10 +1573,16 @@ const App = (() => {
             </div>
           </td>
           <td class="mono">${sanitize(part.sku || '—')}</td>
-          <td>
-            <div class="stock-qty-cell">
+          <td style="text-align:center">
+            <span class="stock-text ${part.shop_qty <= 0 ? 'out' : part.shop_qty <= (part.min_stock_threshold || 5) ? 'low' : 'good'}">${part.shop_qty}</span>
+          </td>
+          <td style="text-align:center">
+            <span class="stock-text ${part.ground_qty <= 0 ? 'out' : 'good'}">${part.ground_qty}</span>
+          </td>
+          <td style="text-align:center">
+            <div class="stock-qty-cell" style="justify-content:center">
               ${stockDot(part)}
-              <span class="stock-text ${status}">${part.stock_qty} Units</span>
+              <span class="stock-text ${status}">${part.stock_qty}</span>
             </div>
           </td>
           <td>${ksh(part.selling_price)}</td>
@@ -1235,16 +1729,28 @@ const App = (() => {
     const name = document.getElementById('pf-name').value.trim();
     if (!name) { showToast('Part name is required', 'error'); return; }
 
+    const existingPart = editId ? state.parts.find(p => p.id === editId) : null;
+    const newQty = parseInt(document.getElementById('pf-qty').value) || 0;
+
     const partData = {
       name,
       sku: document.getElementById('pf-sku').value.trim() || null,
       category: document.getElementById('pf-category').value.trim() || 'General',
       selling_price: parseFloat(document.getElementById('pf-sell').value) || 0,
       buying_price: parseFloat(document.getElementById('pf-buy').value) || 0,
-      stock_qty: parseInt(document.getElementById('pf-qty').value) || 0,
       min_stock_threshold: parseInt(document.getElementById('pf-min').value) || 5,
       supplier_id: document.getElementById('pf-supplier').value || null,
     };
+
+    if (existingPart) {
+      const ground = existingPart.ground_qty || 0;
+      const shop = Math.max(0, newQty - ground);
+      partData.shop_qty = shop;
+      partData.ground_qty = ground;
+    } else {
+      partData.shop_qty = newQty;
+      partData.ground_qty = 0;
+    }
 
     // Handle image upload
     const imgFile = document.getElementById('pf-image')?.files[0];
@@ -1278,6 +1784,128 @@ const App = (() => {
     closeModal();
     await loadBaseData();
     renderInventory(document.getElementById('main-content'));
+  }
+
+  function showTransferStockModal() {
+    const modal = createModal('Transfer Stock (Shop ↔ Ground)', `
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label class="form-label">Select Part *</label>
+        <select id="transfer-part-id" class="form-select">
+          <option value="">-- Choose Part --</option>
+          ${state.parts.map(p => `<option value="${p.id}">${p.name} [SKU: ${p.sku || '—'}]</option>`).join('')}
+        </select>
+      </div>
+      
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+        <div class="form-group">
+          <label class="form-label">From Pool *</label>
+          <select id="transfer-from" class="form-select">
+            <option value="shop">Shop Stock</option>
+            <option value="ground">Ground Stock</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">To Pool *</label>
+          <select id="transfer-to" class="form-select" disabled>
+            <option value="ground">Ground Stock</option>
+            <option value="shop">Shop Stock</option>
+          </select>
+        </div>
+      </div>
+      
+      <div id="transfer-limits-preview" style="font-size:12px; color:var(--text-muted); margin-bottom:12px; background:var(--bg-secondary); padding:8px; border-radius:4px; display:none">
+        <span>Available Shop: <strong id="t-limit-shop">0</strong> units</span> | 
+        <span>Available Ground: <strong id="t-limit-ground">0</strong> units</span>
+      </div>
+      
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label">Transfer Quantity *</label>
+        <input type="number" id="transfer-qty" class="form-input" min="1" placeholder="Enter quantity to transfer">
+      </div>
+    `, [
+      { text: 'Cancel', class: 'btn-secondary', action: () => closeModal() },
+      { text: 'Transfer', class: 'btn-primary', action: () => performStockTransfer() }
+    ]);
+    
+    document.body.appendChild(modal);
+    
+    // Bind change listener programmatically
+    document.getElementById('transfer-part-id')?.addEventListener('change', updateTransferModalLimits);
+    document.getElementById('transfer-from')?.addEventListener('change', toggleTransferDestination);
+    
+    updateTransferModalLimits();
+  }
+
+  function toggleTransferDestination() {
+    const fromVal = document.getElementById('transfer-from').value;
+    const toSelect = document.getElementById('transfer-to');
+    if (fromVal === 'shop') {
+      toSelect.value = 'ground';
+    } else {
+      toSelect.value = 'shop';
+    }
+  }
+
+  function updateTransferModalLimits() {
+    const partId = document.getElementById('transfer-part-id')?.value;
+    const preview = document.getElementById('transfer-limits-preview');
+    if (!partId) {
+      if (preview) preview.style.display = 'none';
+      return;
+    }
+    
+    const part = state.parts.find(p => p.id === partId);
+    if (!part) return;
+    
+    document.getElementById('t-limit-shop').textContent = part.shop_qty || 0;
+    document.getElementById('t-limit-ground').textContent = part.ground_qty || 0;
+    preview.style.display = 'block';
+  }
+
+  async function performStockTransfer() {
+    const partId = document.getElementById('transfer-part-id').value;
+    if (!partId) { showToast('Please select a part', 'error'); return; }
+    
+    const part = state.parts.find(p => p.id === partId);
+    if (!part) return;
+    
+    const fromPool = document.getElementById('transfer-from').value;
+    const qtyInput = document.getElementById('transfer-qty').value;
+    const qty = parseInt(qtyInput);
+    
+    if (isNaN(qty) || qty <= 0) { showToast('Invalid quantity', 'error'); return; }
+    
+    const available = fromPool === 'shop' ? (part.shop_qty || 0) : (part.ground_qty || 0);
+    if (qty > available) {
+      showToast(`Insufficient quantity. Only ${available} units available in ${fromPool}.`, 'error');
+      return;
+    }
+    
+    let newShopQty = part.shop_qty || 0;
+    let newGroundQty = part.ground_qty || 0;
+    
+    if (fromPool === 'shop') {
+      newShopQty -= qty;
+      newGroundQty += qty;
+    } else {
+      newShopQty += qty;
+      newGroundQty -= qty;
+    }
+    
+    const saveBtn = document.querySelector('#part-modal .btn-primary');
+    if (saveBtn) { saveBtn.textContent = 'Transferring...'; saveBtn.disabled = true; }
+    
+    const { error } = await DB.Parts.updateStockPools(partId, newShopQty, newGroundQty);
+    if (error) {
+      showToast('Error transferring stock: ' + error.message, 'error');
+      if (saveBtn) { saveBtn.textContent = 'Transfer'; saveBtn.disabled = false; }
+      return;
+    }
+    
+    showToast(`Transferred ${qty} units of ${part.name} successfully`, 'success');
+    closeModal();
+    await loadBaseData();
+    filterInventory();
   }
 
   async function quickRestock(partId) {
@@ -1613,7 +2241,7 @@ const App = (() => {
     const salesTableRows = s.slice(0, 50).map(sale => {
       const payBadge = sale.payment_method === 'credit' ? 'badge-credit' : sale.payment_method === 'mpesa' ? 'badge-mpesa' : 'badge-cash';
       return `
-        <tr>
+        <tr style="cursor:pointer" onclick="App.viewTransactionDetails('${sale.id}')" title="Click to view details (Requires PIN)">
           <td class="mono">${sanitize(sale.receipt_number || '—')}</td>
           <td style="font-size:12px">${new Date(sale.created_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })}</td>
           <td style="font-size:12px">${(sale.sale_items || []).length} item${(sale.sale_items || []).length !== 1 ? 's' : ''}</td>
@@ -1709,6 +2337,543 @@ const App = (() => {
   }
 
   // ============================================================
+  // CUSTOMERS & DATABASE
+  // ============================================================
+
+  async function loadCustomerDatabase() {
+    const { data: sales } = await DB.Sales.getRecent(2000);
+    const { data: credits } = await DB.Credits.getAll();
+
+    const s = sales || [];
+    const c = credits || [];
+
+    const customersMap = {};
+
+    s.forEach(sale => {
+      if (!sale.customer_name) return;
+      const name = sale.customer_name.trim();
+      const phone = (sale.customer_phone || '').trim();
+      const key = `${name.toLowerCase()}___${phone}`;
+
+      if (!customersMap[key]) {
+        customersMap[key] = {
+          name: name,
+          phone: phone,
+          location: sale.customer_location || '',
+          totalSpent: 0,
+          totalOwed: 0,
+          salesCount: 0,
+          transactions: []
+        };
+      }
+      customersMap[key].totalSpent += (sale.total_amount || 0);
+      customersMap[key].salesCount++;
+      customersMap[key].transactions.push({
+        id: sale.id,
+        date: sale.created_at,
+        receipt_number: sale.receipt_number,
+        amount: sale.total_amount,
+        type: 'sale',
+        payment_method: sale.payment_method
+      });
+      if (sale.customer_location && !customersMap[key].location) {
+        customersMap[key].location = sale.customer_location;
+      }
+    });
+
+    c.forEach(credit => {
+      if (!credit.customer_name) return;
+      const name = credit.customer_name.trim();
+      const phone = (credit.customer_phone || '').trim();
+      const key = `${name.toLowerCase()}___${phone}`;
+
+      if (!customersMap[key]) {
+        customersMap[key] = {
+          name: name,
+          phone: phone,
+          location: '',
+          totalSpent: 0,
+          totalOwed: 0,
+          salesCount: 0,
+          transactions: []
+        };
+      }
+      customersMap[key].totalOwed += (credit.total_owed || 0) - (credit.paid || 0);
+      customersMap[key].transactions.push({
+        id: credit.id,
+        sale_id: credit.sale_id,
+        date: credit.credit_date || credit.created_at,
+        receipt_number: credit.receipt_number || 'Credit Note',
+        amount: credit.total_owed,
+        type: 'credit',
+        status: credit.status
+      });
+    });
+
+    state.customerDatabase = Object.values(customersMap).sort((a, b) => b.totalSpent - a.totalSpent);
+  }
+
+  async function renderCustomers(container) {
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-row">
+          <div>
+            <div class="page-title">Customer Ledger & Database</div>
+            <div class="page-subtitle">Track customer purchase history and credit status.</div>
+          </div>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="loading-state" id="customer-loading">Loading customers...</div>
+      </div>
+    `;
+
+    try {
+      await loadCustomerDatabase();
+      container.querySelector('.page-body').innerHTML = renderCustomerLayout();
+      
+      // Select the first customer if any
+      if (state.customerDatabase.length > 0) {
+        const first = state.customerDatabase[0];
+        const key = `${first.name.toLowerCase()}___${first.phone}`;
+        selectCustomerDetail(key);
+      } else {
+        document.getElementById('customer-detail-content').innerHTML = `
+          <div class="empty-state">No customers recorded yet.</div>
+        `;
+      }
+    } catch (err) {
+      container.querySelector('.page-body').innerHTML = `
+        <div class="empty-state error">Error loading customers: ${err.message}</div>
+      `;
+    }
+  }
+
+  function renderCustomerLayout() {
+    return `
+      <div class="customer-list-layout">
+        <div class="customer-sidebar-panel">
+          <div class="customer-search-wrap">
+            <div class="search-wrap">
+              ${icons.search}
+              <input type="text" id="cust-search" class="search-input" placeholder="Search customer..." oninput="App.filterCustomers(this.value)">
+            </div>
+          </div>
+          <div class="customer-list-scroll" id="customer-list-scroll">
+            ${renderCustomerListRows(state.customerDatabase)}
+          </div>
+        </div>
+        
+        <div class="customer-detail-panel" id="customer-detail-content">
+          <!-- Load dynamically -->
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCustomerListRows(customers) {
+    if (customers.length === 0) {
+      return `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">No matches found</div>`;
+    }
+    return customers.map(c => {
+      const key = `${c.name.toLowerCase()}___${c.phone}`;
+      const isActive = state.selectedCustomerKey === key ? 'active' : '';
+      return `
+        <div class="customer-list-item ${isActive}" onclick="App.selectCustomerDetail('${key}')" id="cust-item-${key}">
+          <div class="customer-list-name">${sanitize(c.name)}</div>
+          <div class="customer-list-meta">
+            <div>📞 ${sanitize(c.phone || 'No phone')}</div>
+            ${c.location ? `<div>📍 ${sanitize(c.location)}</div>` : ''}
+            <div style="margin-top: 4px; display:flex; gap:6px; font-weight:600">
+              <span style="color:var(--success)">Spent: ${ksh(c.totalSpent)}</span>
+              ${c.totalOwed > 0 ? `<span style="color:var(--warning)">Deni: ${ksh(c.totalOwed)}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function filterCustomers(query) {
+    const q = query.toLowerCase().trim();
+    const filtered = state.customerDatabase.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      c.phone.toLowerCase().includes(q) || 
+      (c.location || '').toLowerCase().includes(q)
+    );
+    const scrollEl = document.getElementById('customer-list-scroll');
+    if (scrollEl) {
+      scrollEl.innerHTML = renderCustomerListRows(filtered);
+    }
+  }
+
+  function selectCustomerDetail(key) {
+    state.selectedCustomerKey = key;
+    
+    // Highlight in list
+    document.querySelectorAll('.customer-list-item').forEach(el => {
+      el.classList.remove('active');
+    });
+    const activeItem = document.getElementById(`cust-item-${key}`);
+    if (activeItem) activeItem.classList.add('active');
+
+    const customer = state.customerDatabase.find(c => `${c.name.toLowerCase()}___${c.phone}` === key);
+    const detailEl = document.getElementById('customer-detail-content');
+    if (!detailEl || !customer) return;
+
+    // Sort transactions by date descending
+    const sortedTxns = [...customer.transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    const ledgerRows = sortedTxns.map(t => {
+      const dateStr = new Date(t.date).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' });
+      if (t.type === 'sale') {
+        const badgeClass = t.payment_method === 'credit' ? 'badge-credit' : t.payment_method === 'mpesa' ? 'badge-mpesa' : 'badge-cash';
+        return `
+          <tr style="cursor:pointer" onclick="App.viewTransactionDetails('${t.id}')" title="Click to view receipt">
+            <td>${dateStr}</td>
+            <td>Sale: <span class="mono">${sanitize(t.receipt_number)}</span></td>
+            <td><span class="badge ${badgeClass}">${t.payment_method}</span></td>
+            <td style="font-weight:700" class="success">+${ksh(t.amount)}</td>
+            <td>—</td>
+          </tr>
+        `;
+      } else {
+        const badgeClass = t.status === 'paid' ? 'badge-success' : 'badge-warning';
+        return `
+          <tr style="cursor:pointer" onclick="App.viewTransactionDetails('${t.sale_id}')" title="Click to view sale">
+            <td>${dateStr}</td>
+            <td>Credit: <span class="mono">${sanitize(t.receipt_number)}</span></td>
+            <td><span class="badge ${badgeClass}">Credit (${t.status})</span></td>
+            <td>—</td>
+            <td style="font-weight:700" class="warning">${ksh(t.amount)}</td>
+          </tr>
+        `;
+      }
+    }).join('');
+
+    detailEl.innerHTML = `
+      <div class="customer-header-box">
+        <h3 style="margin:0; font-size:18px; color:var(--text-primary)">${sanitize(customer.name)}</h3>
+        <div style="display:flex; gap:16px; margin-top:8px; font-size:12px; color:var(--text-muted)">
+          <span>📞 ${sanitize(customer.phone || 'No phone')}</span>
+          ${customer.location ? `<span>📍 Location: ${sanitize(customer.location)}</span>` : ''}
+        </div>
+      </div>
+
+      <div class="customer-summary-cards">
+        <div class="customer-summary-card">
+          <div class="customer-summary-label">Total Purchases</div>
+          <div class="customer-summary-value success">${ksh(customer.totalSpent)}</div>
+        </div>
+        <div class="customer-summary-card">
+          <div class="customer-summary-label">Outstanding Balance</div>
+          <div class="customer-summary-value warning">${ksh(customer.totalOwed)}</div>
+        </div>
+        <div class="customer-summary-card">
+          <div class="customer-summary-label">Total Visits</div>
+          <div class="customer-summary-value" style="color:var(--info)">${customer.salesCount} sale${customer.salesCount !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+
+      <div class="card mt-4" style="flex:1; display:flex; flex-direction:column; overflow:hidden">
+        <div class="card-header"><div class="card-title">Transaction History & Ledger</div></div>
+        <div class="table-wrap" style="flex:1; overflow-y:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>Description</th>
+                <th>Type/Payment</th>
+                <th>Paid Amount</th>
+                <th>Owed Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ledgerRows || '<tr><td colspan="5"><div class="empty-state">No transaction history</div></td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // ============================================================
+  // OWNER SECURITY & OPERATORS TABS
+  // ============================================================
+
+  function showOwnerPinVerificationModal(onSuccess) {
+    const owners = state.operators.filter(o => o.role === 'owner');
+    if (owners.length === 0) {
+      showToast('No owner operator profiles found in system', 'error');
+      return;
+    }
+
+    const modal = createModal('Owner Verification Required', `
+      <div style="font-size:13px; color:var(--text-muted); text-align:center; margin-bottom:12px">
+        Please enter an Owner/Admin password to authorize this action.
+      </div>
+      <div class="form-group">
+        <input type="password" id="owner-password-input" class="form-input" placeholder="Enter Owner password" maxlength="32" style="text-align:center; font-size:16px; letter-spacing:2px; height:44px; margin-bottom:12px;">
+      </div>
+    `, [
+      { text: 'Cancel', class: 'btn-secondary', action: () => closeModal() },
+      { text: 'Verify', class: 'btn-primary', action: async () => {
+          const input = document.getElementById('owner-password-input');
+          const password = input?.value;
+          if (!password) { showToast('Password is required', 'error'); return; }
+
+          const btn = document.querySelector('#part-modal .btn-primary');
+          if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
+
+          let verified = false;
+          for (const owner of owners) {
+            const { data } = await DB.Operators.verifyPassword(owner.id, password);
+            if (data) {
+              verified = true;
+              break;
+            }
+          }
+
+          if (verified) {
+            closeModal();
+            onSuccess();
+          } else {
+            showToast('Verification failed: Owner credentials required', 'error');
+            if (input) { input.value = ''; input.focus(); }
+            if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
+          }
+        }
+      }
+    ]);
+
+    document.body.appendChild(modal);
+
+    setTimeout(() => {
+      const input = document.getElementById('owner-password-input');
+      input?.focus();
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          document.querySelector('#part-modal .btn-primary')?.click();
+        }
+      });
+    }, 100);
+  }
+
+  async function renderSettingsOperators(container) {
+    container.innerHTML = `
+      <div class="settings-card">
+        <div class="settings-card-title">Operator Profiles</div>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">
+          Manage login profiles and passwords. Restricted to Owner access.
+        </p>
+        <div class="table-wrap" style="margin-bottom:20px">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="operators-list-tbody">
+              <tr><td colspan="3">Loading operators...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="border-top:1px solid var(--border); padding-top:16px">
+          <h4 style="margin:0 0 12px; font-size:14px">Create New Operator</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Operator Name *</label>
+              <input type="text" id="op-new-name" class="form-input" placeholder="e.g. Victor">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password *</label>
+              <input type="password" id="op-new-password" class="form-input" placeholder="Enter password (max 32)" maxlength="32">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Role *</label>
+              <select id="op-new-role" class="form-select">
+                <option value="employee">Employee</option>
+                <option value="owner">Owner</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary mt-2" onclick="App.addOperator()">Add Operator</button>
+        </div>
+      </div>
+    `;
+
+    await loadSettingsOperatorsTable();
+  }
+
+  async function loadSettingsOperatorsTable() {
+    const tbody = document.getElementById('operators-list-tbody');
+    if (!tbody) return;
+
+    const { data: ops } = await DB.Operators.getAll();
+    state.operators = ops || [];
+
+    tbody.innerHTML = state.operators.map(op => {
+      const isProtected = op.role === 'owner' || op.id === state.operator?.id;
+      return `
+        <tr>
+          <td style="font-weight:600">${sanitize(op.name)}</td>
+          <td><span class="badge ${op.role === 'owner' ? 'badge-credit' : 'badge-cash'}">${op.role}</span></td>
+          <td>
+            ${isProtected 
+              ? `<span style="font-size:11px; color:var(--text-muted)">Protected</span>` 
+              : `<button class="btn btn-secondary btn-sm" onclick="App.deleteOperator('${op.id}')" style="color:var(--accent)">Delete</button>`
+            }
+          </td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="3">No operators registered.</td></tr>';
+  }
+
+  async function addOperator() {
+    const nameInput = document.getElementById('op-new-name');
+    const pwdInput = document.getElementById('op-new-password');
+    const roleInput = document.getElementById('op-new-role');
+
+    const name = nameInput?.value?.trim();
+    const password = pwdInput?.value;
+    const role = roleInput?.value || 'employee';
+
+    if (!name || !password) { showToast('Please enter operator name and password', 'error'); return; }
+    if (password.length < 4 || password.length > 32) { showToast('Password must be between 4 and 32 characters', 'error'); return; }
+
+    showOwnerPinVerificationModal(async () => {
+      const { error } = await DB.Operators.create({ name, password, role });
+      if (error) {
+        showToast('Error creating operator: ' + error.message, 'error');
+      } else {
+        showToast(`Operator ${name} added!`, 'success');
+        if (nameInput) nameInput.value = '';
+        if (pwdInput) pwdInput.value = '';
+        await loadSettingsOperatorsTable();
+      }
+    });
+  }
+
+  async function deleteOperator(opId) {
+    if (!confirm('Are you sure you want to delete this operator profile?')) return;
+    
+    showOwnerPinVerificationModal(async () => {
+      const { error } = await DB.Operators.delete(opId);
+      if (error) {
+        showToast('Error deleting operator: ' + error.message, 'error');
+      } else {
+        showToast('Operator deleted successfully', 'success');
+        await loadSettingsOperatorsTable();
+      }
+    });
+  }
+
+  // ============================================================
+  // SOURCING LOGS
+  // ============================================================
+
+  async function renderSettingsSourcingLogs(container) {
+    container.innerHTML = `
+      <div class="settings-card">
+        <div class="settings-card-title" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Out of Stock Sourcing Logs</span>
+          <button class="btn btn-secondary btn-sm" onclick="App.exportSourcingCSV()">${icons.download} Export CSV</button>
+        </div>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">
+          Records of items purchased externally to fulfill orders that exceeded stock levels.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Part Name</th>
+                <th>Qty</th>
+                <th>Sourcing Shop</th>
+                <th>Cost Price</th>
+                <th>Sahaja Price</th>
+                <th>Profit Margin</th>
+                <th>Payment</th>
+              </tr>
+            </thead>
+            <tbody id="sourcing-logs-tbody">
+              <tr><td colspan="8">Loading sourcing logs...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    await loadSettingsSourcingLogsTable();
+  }
+
+  async function loadSettingsSourcingLogsTable() {
+    const tbody = document.getElementById('sourcing-logs-tbody');
+    if (!tbody) return;
+
+    const { data: logs } = await DB.SourcingLogs.getAll();
+    const l = logs || [];
+
+    tbody.innerHTML = l.map(log => {
+      const cost = log.cost_price || 0;
+      const sell = log.selling_price || 0;
+      const profit = sell - cost;
+      const dateStr = new Date(log.created_at).toLocaleDateString('en-KE');
+
+      return `
+        <tr>
+          <td>${dateStr}</td>
+          <td style="font-weight:600">${sanitize(log.part_name)}</td>
+          <td>${log.quantity}</td>
+          <td>${sanitize(log.sourcing_shop)}</td>
+          <td>${ksh(cost)}</td>
+          <td>${ksh(sell)}</td>
+          <td style="font-weight:600; color:${profit >= 0 ? 'var(--success)' : 'var(--accent)'}">
+            ${ksh(profit)}
+          </td>
+          <td>
+            <span class="badge ${log.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">
+              ${log.payment_status} (${log.payment_method})
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="8">No external sourcing logs recorded.</td></tr>';
+  }
+
+  async function exportSourcingCSV() {
+    const { data: logs } = await DB.SourcingLogs.getAll();
+    const l = logs || [];
+    if (l.length === 0) { showToast('No sourcing logs to export', 'warning'); return; }
+
+    const headers = ['Date', 'Part Name', 'Quantity', 'Sourcing Shop', 'Cost Price', 'Selling Price', 'Profit', 'Status', 'Payment Method'];
+    const rows = l.map(log => [
+      new Date(log.created_at).toLocaleDateString('en-KE'),
+      log.part_name,
+      log.quantity,
+      log.sourcing_shop,
+      log.cost_price,
+      log.selling_price,
+      log.selling_price - log.cost_price,
+      log.payment_status,
+      log.payment_method
+    ]);
+
+    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `sahaja-sourcing-logs.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Sourcing logs exported', 'success');
+  }
+
+  // ============================================================
   // SETTINGS
   // ============================================================
 
@@ -1730,6 +2895,8 @@ const App = (() => {
             <div class="settings-nav-item" onclick="App.showSettingsSection('theme', this)">Appearance</div>
             <div class="settings-nav-item" onclick="App.showSettingsSection('receipt', this)">Receipt</div>
             <div class="settings-nav-item" onclick="App.showSettingsSection('suppliers', this)">Suppliers</div>
+            <div class="settings-nav-item" onclick="App.showSettingsSection('operators', this)">Operators</div>
+            <div class="settings-nav-item" onclick="App.showSettingsSection('sourcing', this)">Sourcing Logs</div>
             <div class="settings-nav-item" onclick="App.showSettingsSection('backup', this)">Backup</div>
           </div>
           <div class="settings-section" id="settings-content">
@@ -1749,6 +2916,8 @@ const App = (() => {
       case 'theme': content.innerHTML = renderSettingsTheme(); break;
       case 'receipt': content.innerHTML = renderSettingsReceipt(); break;
       case 'suppliers': renderSettingsSuppliers(content); break;
+      case 'operators': renderSettingsOperators(content); break;
+      case 'sourcing': renderSettingsSourcingLogs(content); break;
       case 'backup': content.innerHTML = renderSettingsBackup(); break;
     }
   }
@@ -2053,11 +3222,11 @@ const App = (() => {
     navigate,
     // POS
     filterPOSParts, setPOSCategory, addToCart, updateCartQty, removeFromCart,
-    setPayMethod, processSale, switchPOSTab,
+    setPayMethod, processSale, switchPOSTab, setSalesChannel, shareReceiptPDF, viewTransactionDetails,
     // Inventory
     filterInventory, showAddPartModal, showEditPartModal, previewPartImage,
     clearPartImage, updateMarginPreview, savePartForm, quickRestock, deletePart,
-    toggleSelectAll, updateBulkButtons, exportInventoryCSV,
+    toggleSelectAll, updateBulkButtons, exportInventoryCSV, showTransferStockModal,
     // Credits
     filterCredits, filterCreditStatus, toggleCreditHistory, showPaymentModal, recordPayment,
     // Reports
@@ -2065,6 +3234,11 @@ const App = (() => {
     // Settings
     showSettingsSection, selectTheme, saveShopProfile, saveReceiptSettings,
     showAddSupplierModal, addSupplier, deleteSupplier, exportBackup,
+    addOperator, deleteOperator, exportSourcingCSV,
+    // Operators
+    selectOperatorProfile, backToOperatorSelect, submitOperatorPassword, confirmSwitchOperator, navigateWithPIN,
+    // Customers
+    filterCustomers, selectCustomerDetail,
     // Daily close
     showDailyClose,
     // Auth

@@ -197,7 +197,7 @@ ORDER BY sale_date DESC;
 GRANT SELECT ON daily_sales_summary TO authenticated;
 
 -- ============================================================
--- DONE. What was added:
+-- DONE. What was added in v2:
 -- + suppliers table (4 seeded Nairobi suppliers)
 -- + parts: image_url, category, supplier_id
 -- + sales: mpesa_txn_code, payment_method
@@ -209,3 +209,189 @@ GRANT SELECT ON daily_sales_summary TO authenticated;
 -- + low_stock_with_supplier view (using actual column names)
 -- + daily_sales_summary view (using actual column names)
 -- ============================================================
+
+-- ============================================================
+-- SAHAJA SCHEMA ADDITIONS — v3 (New features)
+-- ============================================================
+
+-- 1. ADD NEW COLUMNS TO PARTS FOR STOCK SPLITTING
+ALTER TABLE parts
+  ADD COLUMN IF NOT EXISTS shop_qty INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS ground_qty INTEGER DEFAULT 0;
+
+-- Migrate existing total quantity to shop_qty if shop_qty is 0
+UPDATE parts SET shop_qty = qty WHERE shop_qty = 0 AND qty > 0;
+
+-- 2. ADD NEW COLUMNS TO SALES FOR CHANNELS, OPERATORS & LOCATIONS
+ALTER TABLE sales
+  ADD COLUMN IF NOT EXISTS sales_channel TEXT DEFAULT 'shop', -- 'shop' | 'ground'
+  ADD COLUMN IF NOT EXISTS customer_location TEXT,
+  ADD COLUMN IF NOT EXISTS operator_name TEXT;
+
+-- 3. OPERATORS TABLE
+CREATE TABLE IF NOT EXISTS operators (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE NOT NULL,
+  pin VARCHAR(4) NOT NULL, -- 4-digit PIN
+  role TEXT NOT NULL DEFAULT 'employee', -- 'owner' | 'employee'
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE operators ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can manage operators"
+  ON operators FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+-- Seed initial operators
+INSERT INTO operators (name, pin, role) VALUES
+  ('Owner', '9876', 'owner'),
+  ('Ann', '1111', 'employee'),
+  ('Victor', '2222', 'employee')
+ON CONFLICT (name) DO NOTHING;
+
+-- 4. SOURCING LOGS FOR OUT OF STOCK SALES
+CREATE TABLE IF NOT EXISTS sourcing_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sale_id UUID REFERENCES sales(id) ON DELETE CASCADE,
+  part_id UUID REFERENCES parts(id) ON DELETE CASCADE,
+  part_name TEXT NOT NULL,
+  quantity INTEGER NOT NULL,
+  sourcing_shop TEXT NOT NULL,
+  cost_price NUMERIC(10,2) NOT NULL,
+  selling_price NUMERIC(10,2) NOT NULL,
+  payment_status TEXT NOT NULL, -- 'paid' | 'partial' | 'credit'
+  payment_method TEXT NOT NULL, -- 'cash' | 'mpesa' | 'credit'
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE sourcing_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can manage sourcing_logs"
+  ON sourcing_logs FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+
+-- ============================================================
+-- SAHAJA SECURITY MIGRATION — ALPHANUMERIC PASSWORDS
+-- ============================================================
+
+-- 1. Enable pgcrypto for bcrypt hashing
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 2. Create operators table if it doesn't exist, and drop PIN column if it does
+CREATE TABLE IF NOT EXISTS operators (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'employee',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE operators DROP COLUMN IF EXISTS pin;
+
+CREATE TABLE IF NOT EXISTS operator_secrets (
+  operator_id UUID PRIMARY KEY REFERENCES operators(id) ON DELETE CASCADE,
+  password_hash TEXT NOT NULL
+);
+
+-- Enable RLS on secrets table
+ALTER TABLE operator_secrets ENABLE ROW LEVEL SECURITY;
+
+-- Deny all direct client-side CRUD operations on secrets table (fully locked down)
+DROP POLICY IF EXISTS "Deny all direct secrets access" ON operator_secrets;
+-- Note: Having no policies on operator_secrets implicitly denies all operations.
+
+-- 3. Clear existing seeded operators to start clean
+TRUNCATE TABLE operators CASCADE;
+
+-- 4. Create secure RPC management functions (SECURITY DEFINER bypasses RLS safely)
+
+-- Function to create an operator profile
+CREATE OR REPLACE FUNCTION create_operator_profile(
+  p_name TEXT,
+  p_password TEXT,
+  p_role TEXT
+)
+RETURNS UUID AS $$
+DECLARE
+  v_op_id UUID;
+BEGIN
+  -- Insert into public operators table
+  INSERT INTO operators (name, role)
+  VALUES (p_name, p_role)
+  RETURNING id INTO v_op_id;
+
+  -- Insert bcrypt hashed password into secrets table
+  INSERT INTO operator_secrets (operator_id, password_hash)
+  VALUES (v_op_id, crypt(p_password, gen_salt('bf', 8)));
+
+  RETURN v_op_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to verify an operator's password
+CREATE OR REPLACE FUNCTION verify_operator_password(
+  p_op_id UUID,
+  p_password TEXT
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_hash TEXT;
+BEGIN
+  SELECT password_hash INTO v_hash 
+  FROM operator_secrets 
+  WHERE operator_id = p_op_id;
+  
+  IF v_hash IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  
+  RETURN v_hash = crypt(p_password, v_hash);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to delete an operator profile
+CREATE OR REPLACE FUNCTION delete_operator_profile(
+  p_op_id UUID
+)
+RETURNS BOOLEAN AS $$
+BEGIN
+  DELETE FROM operators WHERE id = p_op_id;
+  RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to change an operator's password
+CREATE OR REPLACE FUNCTION change_operator_password(
+  p_op_id UUID,
+  p_new_password TEXT,
+  p_current_password TEXT
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_verified BOOLEAN;
+BEGIN
+  -- Verify current password first
+  SELECT verify_operator_password(p_op_id, p_current_password) INTO v_verified;
+  
+  IF NOT v_verified THEN
+    RETURN FALSE;
+  END IF;
+  
+  -- Update with new bcrypt hashed password
+  UPDATE operator_secrets 
+  SET password_hash = crypt(p_new_password, gen_salt('bf', 8))
+  WHERE operator_id = p_op_id;
+  
+  RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5. Seed default operators safely via our new secure RPC function
+SELECT create_operator_profile('Victor', 'password123', 'owner');
+SELECT create_operator_profile('Ann', 'ann123', 'employee');
+

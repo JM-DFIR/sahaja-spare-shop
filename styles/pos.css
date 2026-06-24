@@ -306,17 +306,22 @@
 .cart-item-total { font-size: 14px; font-weight: 700; color: var(--text-primary); }
 
 .cart-remove {
-  background: none;
+  background: rgba(239, 68, 68, 0.12);
   border: none;
-  color: var(--text-muted);
+  color: var(--danger);
   cursor: pointer;
-  padding: 2px;
-  border-radius: 3px;
-  transition: color var(--transition);
+  padding: 8px;
+  border-radius: 4px;
+  transition: all var(--transition);
   display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.cart-remove:hover { color: var(--danger); }
+.cart-remove:hover {
+  background: var(--danger);
+  color: #fff;
+}
 
 /* ---- Cart Summary (bottom fixed area) ---- */
 .cart-summary {

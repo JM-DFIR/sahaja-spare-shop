@@ -36,6 +36,8 @@ function mapPart(p) {
     ...p,
     sku: p.code || '',                                  // code → sku
     stock_qty: p.qty ?? 0,                              // qty → stock_qty
+    shop_qty: p.shop_qty ?? 0,                          // new shop pool
+    ground_qty: p.ground_qty ?? 0,                      // new ground pool
     min_stock_threshold: p.min_qty ?? 5,                // min_qty → min_stock_threshold
     selling_price: p.sell_price ?? 0,                   // sell_price → selling_price
     buying_price: p.buy_price ?? 0,                     // buy_price → buying_price
@@ -78,7 +80,9 @@ function unmapPart(appPart) {
   const db = {
     name: appPart.name,
     code: appPart.sku || null,
-    qty: appPart.stock_qty ?? 0,
+    qty: (appPart.shop_qty ?? 0) + (appPart.ground_qty ?? 0), // total qty = shop + ground
+    shop_qty: appPart.shop_qty ?? 0,
+    ground_qty: appPart.ground_qty ?? 0,
     min_qty: appPart.min_stock_threshold ?? 5,
     sell_price: appPart.selling_price ?? 0,
     buy_price: appPart.buying_price ?? 0,
@@ -173,10 +177,24 @@ const Parts = {
   },
 
   async updateStock(id, newQty) {
-    // DB column is 'qty'
+    // Preserve ground_qty and update shop_qty as the remainder
+    const { data: part } = await _supabase.from('parts').select('ground_qty').eq('id', id).single();
+    const ground = part?.ground_qty || 0;
+    const shop = Math.max(0, newQty - ground);
     const { data, error } = await _supabase
       .from('parts')
-      .update({ qty: newQty })
+      .update({ qty: newQty, shop_qty: shop, ground_qty: ground })
+      .eq('id', id)
+      .select()
+      .single();
+    return { data: mapPart(data), error };
+  },
+
+  async updateStockPools(id, shopQty, groundQty) {
+    const total = shopQty + groundQty;
+    const { data, error } = await _supabase
+      .from('parts')
+      .update({ qty: total, shop_qty: shopQty, ground_qty: groundQty })
       .eq('id', id)
       .select()
       .single();
@@ -246,7 +264,10 @@ const Sales = {
       mpesa_txn_code: appSale.mpesa_txn_code || null,
       customer_name: appSale.customer_name || null,
       customer_phone: appSale.customer_phone || null,
-      created_by: appSale.created_by || null,
+      customer_location: appSale.customer_location || null, // new
+      operator_name: appSale.operator_name || null,         // new
+      sales_channel: appSale.sales_channel || 'shop',       // new
+      created_by: appSale.operator_name || appSale.created_by || null,
     };
 
     const { data: saleData, error: saleError } = await _supabase
@@ -274,18 +295,51 @@ const Sales = {
 
     if (itemsError) return { data: null, error: itemsError };
 
-    // Deduct stock — DB column is 'qty'
+    // Deduct stock dynamically depending on selected channel
+    const channel = dbSale.sales_channel; // 'shop' | 'ground'
     for (const item of items) {
       const { data: part } = await _supabase
         .from('parts')
-        .select('qty')
+        .select('shop_qty, ground_qty')
         .eq('id', item.part_id)
         .single();
+
       if (part) {
+        let shop = part.shop_qty || 0;
+        let ground = part.ground_qty || 0;
+
+        if (channel === 'ground') {
+          ground = Math.max(0, ground - item.quantity);
+        } else {
+          shop = Math.max(0, shop - item.quantity);
+        }
+
+        const newTotal = shop + ground;
+
         await _supabase
           .from('parts')
-          .update({ qty: Math.max(0, (part.qty || 0) - item.quantity) })
+          .update({
+            shop_qty: shop,
+            ground_qty: ground,
+            qty: newTotal
+          })
           .eq('id', item.part_id);
+      }
+
+      // If item has sourcing details, write to sourcing logs table
+      if (item.sourcing) {
+        const dbSourcing = {
+          sale_id: saleData.id,
+          part_id: item.part_id,
+          part_name: item.part_name,
+          quantity: item.sourcing.quantity,
+          sourcing_shop: item.sourcing.sourcing_shop,
+          cost_price: item.sourcing.cost_price,
+          selling_price: item.unit_price,
+          payment_status: item.sourcing.payment_status,
+          payment_method: item.sourcing.payment_method
+        };
+        await _supabase.from('sourcing_logs').insert([dbSourcing]);
       }
     }
 
@@ -655,6 +709,81 @@ const Restock = {
 };
 
 // ============================================================
+// OPERATORS
+// ============================================================
+
+const Operators = {
+  async getAll() {
+    const { data, error } = await _supabase
+      .from('operators')
+      .select('id, name, role, created_at')
+      .order('name');
+    return { data, error };
+  },
+
+  async create(operator) {
+    const { data, error } = await _supabase
+      .rpc('create_operator_profile', {
+        p_name: operator.name,
+        p_password: operator.password,
+        p_role: operator.role
+      });
+    if (error) return { data: null, error };
+    return { data: { id: data, name: operator.name, role: operator.role }, error: null };
+  },
+
+  async verifyPassword(id, password) {
+    const { data, error } = await _supabase
+      .rpc('verify_operator_password', {
+        p_op_id: id,
+        p_password: password
+      });
+    return { data: !!data, error };
+  },
+
+  async changePassword(id, newPassword, currentPassword) {
+    const { data, error } = await _supabase
+      .rpc('change_operator_password', {
+        p_op_id: id,
+        p_new_password: newPassword,
+        p_current_password: currentPassword
+      });
+    return { data: !!data, error };
+  },
+
+  async delete(id) {
+    const { data, error } = await _supabase
+      .rpc('delete_operator_profile', {
+        p_op_id: id
+      });
+    return { data: !!data, error };
+  }
+};
+
+// ============================================================
+// SOURCING LOGS
+// ============================================================
+
+const SourcingLogs = {
+  async getAll() {
+    const { data, error } = await _supabase
+      .from('sourcing_logs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return { data, error };
+  },
+
+  async create(log) {
+    const { data, error } = await _supabase
+      .from('sourcing_logs')
+      .insert([log])
+      .select()
+      .single();
+    return { data, error };
+  }
+};
+
+// ============================================================
 // EXPORT
 // ============================================================
 window.DB = {
@@ -666,5 +795,7 @@ window.DB = {
   Suppliers,
   ShopSettings,
   DailyClosing,
-  Restock
+  Restock,
+  Operators,
+  SourcingLogs
 };
