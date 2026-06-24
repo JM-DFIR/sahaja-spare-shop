@@ -3120,7 +3120,7 @@ const App = (() => {
     showAddSupplierModal, addSupplier, deleteSupplier, exportBackup,
     addOperator, deleteOperator, exportSourcingCSV,
     // Operators
-    selectOperatorProfile, backToOperatorSelect, submitOperatorPassword, confirmSwitchOperator, navigateWithPIN,
+    confirmSwitchOperator, navigateWithPIN,
     // Customers
     filterCustomers, selectCustomerDetail,
     // Daily close
