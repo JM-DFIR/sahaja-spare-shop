@@ -177,13 +177,9 @@ const Parts = {
   },
 
   async updateStock(id, newQty) {
-    // Preserve ground_qty and update shop_qty as the remainder
-    const { data: part } = await _supabase.from('parts').select('ground_qty').eq('id', id).single();
-    const ground = part?.ground_qty || 0;
-    const shop = Math.max(0, newQty - ground);
     const { data, error } = await _supabase
       .from('parts')
-      .update({ qty: newQty, shop_qty: shop, ground_qty: ground })
+      .update({ qty: newQty })
       .eq('id', id)
       .select()
       .single();
@@ -191,10 +187,9 @@ const Parts = {
   },
 
   async updateStockPools(id, shopQty, groundQty) {
-    const total = shopQty + groundQty;
     const { data, error } = await _supabase
       .from('parts')
-      .update({ qty: total, shop_qty: shopQty, ground_qty: groundQty })
+      .update({ shop_qty: shopQty, ground_qty: groundQty })
       .eq('id', id)
       .select()
       .single();
@@ -300,28 +295,32 @@ const Sales = {
     for (const item of items) {
       const { data: part } = await _supabase
         .from('parts')
-        .select('shop_qty, ground_qty')
+        .select('qty, shop_qty, ground_qty')
         .eq('id', item.part_id)
         .single();
 
       if (part) {
+        const qtyVal = part.qty || 0;
         let shop = part.shop_qty || 0;
         let ground = part.ground_qty || 0;
 
+        let deducted = 0;
         if (channel === 'ground') {
+          deducted = Math.min(item.quantity, ground);
           ground = Math.max(0, ground - item.quantity);
         } else {
+          deducted = Math.min(item.quantity, shop);
           shop = Math.max(0, shop - item.quantity);
         }
 
-        const newTotal = shop + ground;
+        const newQty = Math.max(0, qtyVal - deducted);
 
         await _supabase
           .from('parts')
           .update({
             shop_qty: shop,
             ground_qty: ground,
-            qty: newTotal
+            qty: newQty
           })
           .eq('id', item.part_id);
       }

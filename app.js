@@ -1692,6 +1692,7 @@ const App = (() => {
       </div>
       
       <div id="transfer-limits-preview" style="font-size:12px; color:var(--text-muted); margin-bottom:12px; background:var(--bg-secondary); padding:8px; border-radius:4px; display:none">
+        <span id="t-limit-general-wrapper">Available General: <strong id="t-limit-general">0</strong> units | </span>
         <span>Available Shop: <strong id="t-limit-shop">0</strong> units</span> | 
         <span>Available Ground: <strong id="t-limit-ground">0</strong> units</span>
       </div>
@@ -1707,26 +1708,18 @@ const App = (() => {
     
     document.body.appendChild(modal);
     
-    // Bind change listener programmatically
-    document.getElementById('transfer-part-id')?.addEventListener('change', updateTransferModalLimits);
-    document.getElementById('transfer-from')?.addEventListener('change', toggleTransferDestination);
+    // Bind listeners programmatically
+    document.getElementById('transfer-part-id')?.addEventListener('change', handleTransferPartChange);
+    document.getElementById('transfer-from')?.addEventListener('change', handleTransferFromChange);
     
-    updateTransferModalLimits();
+    handleTransferPartChange();
   }
 
-  function toggleTransferDestination() {
-    const fromVal = document.getElementById('transfer-from').value;
-    const toSelect = document.getElementById('transfer-to');
-    if (fromVal === 'shop') {
-      toSelect.value = 'ground';
-    } else {
-      toSelect.value = 'shop';
-    }
-  }
-
-  function updateTransferModalLimits() {
+  function handleTransferPartChange() {
     const partId = document.getElementById('transfer-part-id')?.value;
     const preview = document.getElementById('transfer-limits-preview');
+    const fromSelect = document.getElementById('transfer-from');
+    
     if (!partId) {
       if (preview) preview.style.display = 'none';
       return;
@@ -1735,9 +1728,74 @@ const App = (() => {
     const part = state.parts.find(p => p.id === partId);
     if (!part) return;
     
-    document.getElementById('t-limit-shop').textContent = part.shop_qty || 0;
-    document.getElementById('t-limit-ground').textContent = part.ground_qty || 0;
-    preview.style.display = 'block';
+    const total = part.stock_qty || 0;
+    const shop = part.shop_qty || 0;
+    const ground = part.ground_qty || 0;
+    const general = Math.max(0, total - (shop + ground));
+    
+    // Update limit numbers
+    document.getElementById('t-limit-shop').textContent = shop;
+    document.getElementById('t-limit-ground').textContent = ground;
+    document.getElementById('t-limit-general').textContent = general;
+    
+    const genWrapper = document.getElementById('t-limit-general-wrapper');
+    if (genWrapper) {
+      genWrapper.style.display = general > 0 ? 'inline' : 'none';
+    }
+    
+    if (preview) preview.style.display = 'block';
+    
+    // Re-populate fromSelect options based on whether general stock exists
+    const currentFromVal = fromSelect.value;
+    fromSelect.innerHTML = '';
+    
+    if (general > 0) {
+      const optGen = document.createElement('option');
+      optGen.value = 'general';
+      optGen.textContent = 'General Stock';
+      fromSelect.appendChild(optGen);
+    }
+    
+    const optShop = document.createElement('option');
+    optShop.value = 'shop';
+    optShop.textContent = 'Shop Stock';
+    fromSelect.appendChild(optShop);
+    
+    const optGround = document.createElement('option');
+    optGround.value = 'ground';
+    optGround.textContent = 'Ground Stock';
+    fromSelect.appendChild(optGround);
+    
+    // Restore value if still valid
+    if (fromSelect.querySelector(`option[value="${currentFromVal}"]`)) {
+      fromSelect.value = currentFromVal;
+    } else {
+      fromSelect.value = general > 0 ? 'general' : 'shop';
+    }
+    
+    handleTransferFromChange();
+  }
+
+  function handleTransferFromChange() {
+    const fromVal = document.getElementById('transfer-from')?.value;
+    const toSelect = document.getElementById('transfer-to');
+    if (!toSelect) return;
+    
+    if (fromVal === 'general') {
+      toSelect.disabled = false;
+      toSelect.innerHTML = `
+        <option value="ground">Ground Stock</option>
+        <option value="shop">Shop Stock</option>
+      `;
+    } else if (fromVal === 'shop') {
+      toSelect.disabled = true;
+      toSelect.innerHTML = `<option value="ground">Ground Stock</option>`;
+      toSelect.value = 'ground';
+    } else if (fromVal === 'ground') {
+      toSelect.disabled = true;
+      toSelect.innerHTML = `<option value="shop">Shop Stock</option>`;
+      toSelect.value = 'shop';
+    }
   }
 
   async function performStockTransfer() {
@@ -1748,14 +1806,19 @@ const App = (() => {
     if (!part) return;
     
     const fromPool = document.getElementById('transfer-from').value;
+    const toPool = document.getElementById('transfer-to').value;
     const qtyInput = document.getElementById('transfer-qty').value;
     const qty = parseInt(qtyInput);
     
     if (isNaN(qty) || qty <= 0) { showToast('Invalid quantity', 'error'); return; }
     
-    const available = fromPool === 'shop' ? (part.shop_qty || 0) : (part.ground_qty || 0);
+    let available = 0;
+    if (fromPool === 'shop') available = part.shop_qty || 0;
+    else if (fromPool === 'ground') available = part.ground_qty || 0;
+    else if (fromPool === 'general') available = Math.max(0, (part.stock_qty || 0) - ((part.shop_qty || 0) + (part.ground_qty || 0)));
+    
     if (qty > available) {
-      showToast(`Insufficient quantity. Only ${available} units available in ${fromPool}.`, 'error');
+      showToast(`Insufficient quantity. Only ${available} units available in ${fromPool === 'general' ? 'General' : fromPool}.`, 'error');
       return;
     }
     
@@ -1765,9 +1828,15 @@ const App = (() => {
     if (fromPool === 'shop') {
       newShopQty -= qty;
       newGroundQty += qty;
-    } else {
+    } else if (fromPool === 'ground') {
       newShopQty += qty;
       newGroundQty -= qty;
+    } else if (fromPool === 'general') {
+      if (toPool === 'ground') {
+        newGroundQty += qty;
+      } else {
+        newShopQty += qty;
+      }
     }
     
     const saveBtn = document.querySelector('#part-modal .btn-primary');
