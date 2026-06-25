@@ -112,6 +112,8 @@ const App = (() => {
     customerDatabase: [],
     selectedCustomerKey: null,
     enteredPin: '',
+    quotationCart: [],
+    quotations: [],
   };
 
   // ---- Toast ----
@@ -157,6 +159,9 @@ const App = (() => {
       </div>
       <div style="display:flex; align-items:center; gap:10px">
         <div class="mobile-topbar-time" id="mobile-clock">--:--:-- --</div>
+        <button class="mobile-topbar-settings-btn" onclick="App.navigate('quotations')" title="Quotations" style="margin-right: -4px;">
+          ${icons.quote}
+        </button>
         <button class="mobile-topbar-settings-btn" onclick="App.navigate('settings')">
           ${icons.settings}
         </button>
@@ -237,6 +242,7 @@ const App = (() => {
     logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
     chevronDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6,9 12,15 18,9"/></svg>`,
     user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+    quote: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>`,
   };
 
   // ============================================================
@@ -480,6 +486,7 @@ const App = (() => {
         <div class="nav-item" data-page="inventory" onclick="App.navigate('inventory')">${icons.inventory} Inventory <span id="low-stock-badge" class="nav-badge hidden">${state.lowStockCount}</span></div>
         <div class="nav-item" data-page="pos" onclick="App.navigate('pos')">${icons.pos} Sales POS</div>
         <div class="nav-item" data-page="credits" onclick="App.navigate('credits')">${icons.credit} Credit Log</div>
+        <div class="nav-item" data-page="quotations" onclick="App.navigate('quotations')">${icons.quote} Quotations</div>
         <div class="nav-item" data-page="customers" onclick="App.navigateWithPIN('customers')">${icons.user} Customers</div>
 
         <div class="section-label">Analytics</div>
@@ -528,6 +535,7 @@ const App = (() => {
       case 'reports': renderReports(content); break;
       case 'settings': renderSettings(content); break;
       case 'customers': renderCustomers(content); break;
+      case 'quotations': renderQuotations(content); break;
     }
   }
 
@@ -2094,7 +2102,647 @@ const App = (() => {
   }
 
   // ============================================================
+  // QUOTATIONS
+  // ============================================================
+
+  async function renderQuotations(container) {
+    const { data: quotes, error } = await DB.Quotations.getAll();
+    if (!error && quotes) {
+      state.quotations = quotes;
+    }
+
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-row">
+          <div>
+            <div class="page-title">Quotations Ledger</div>
+            <div class="page-subtitle">Draft and manage customer price quotes.</div>
+          </div>
+          <button class="btn btn-primary" onclick="App.renderQuotationForm(document.getElementById('main-content'))">
+            ${icons.plus} New Quotation
+          </button>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="inventory-toolbar">
+          <div class="search-wrap" style="flex:1; max-width:320px">
+            ${icons.search}
+            <input type="text" id="quote-search" class="search-input" placeholder="Search by quotation number or name..." oninput="App.filterQuotations()">
+          </div>
+        </div>
+
+        <div class="inventory-table-wrap">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Quotation No</th>
+                  <th>Date</th>
+                  <th>Customer (M/S)</th>
+                  <th>Attention</th>
+                  <th style="text-align:center">Items Count</th>
+                  <th>Item Value</th>
+                  <th>Total (with 16% VAT)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="quotes-table-body">
+                ${renderQuotationRows(state.quotations)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderQuotationRows(quotes) {
+    if (!quotes || quotes.length === 0) {
+      return `<tr><td colspan="8"><div class="empty-state">No quotations found.</div></td></tr>`;
+    }
+    return quotes.map(q => {
+      const dateStr = new Date(q.created_at).toLocaleDateString('en-KE');
+      const itemsCount = (q.items || []).length;
+      return `
+        <tr>
+          <td style="font-weight:600; color:var(--accent)">${sanitize(q.quotation_number)}</td>
+          <td style="font-size:12px; color:var(--text-muted)">${dateStr}</td>
+          <td style="font-weight:600">${sanitize(q.customer_name)}</td>
+          <td>${sanitize(q.attention_to || '—')}</td>
+          <td style="text-align:center">${itemsCount}</td>
+          <td>${ksh(q.item_value)}</td>
+          <td style="font-weight:600; color:var(--success)">${ksh(q.total_amount)}</td>
+          <td>
+            <div class="action-btns">
+              <button class="btn btn-sm btn-secondary" onclick="App.showQuotationPreviewModal('${q.id}')">View</button>
+              ${state.operator?.role === 'owner' ? `<button class="btn btn-sm btn-ghost" onclick="App.deleteQuotation('${q.id}')" style="color:var(--accent)">Delete</button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function filterQuotations() {
+    const q = document.getElementById('quote-search')?.value.toLowerCase() || '';
+    let filtered = state.quotations;
+    if (q) {
+      filtered = filtered.filter(x => 
+        x.quotation_number.toLowerCase().includes(q) || 
+        x.customer_name.toLowerCase().includes(q)
+      );
+    }
+    document.getElementById('quotes-table-body').innerHTML = renderQuotationRows(filtered);
+  }
+
+  async function deleteQuotation(id) {
+    if (!confirm('Are you sure you want to delete this quotation?')) return;
+    const { error } = await DB.Quotations.delete(id);
+    if (error) {
+      showToast('Error deleting quotation: ' + error.message, 'error');
+    } else {
+      showToast('Quotation deleted successfully', 'success');
+      renderQuotations(document.getElementById('main-content'));
+    }
+  }
+
+  function renderQuotationForm(container) {
+    state.quotationCart = [];
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-row">
+          <div>
+            <div class="page-title">New Quotation</div>
+            <div class="page-subtitle">Draft a quotation for price inquiries.</div>
+          </div>
+          <button class="btn btn-secondary" onclick="App.navigate('quotations')">Back to List</button>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="pos-layout" style="grid-template-columns: 1fr 340px; gap: 20px;">
+          <div style="display:flex; flex-direction:column; gap:20px">
+            <div class="card" style="padding:16px;">
+              <h4 style="margin:0 0 12px; font-size:14px;">Customer Info</h4>
+              <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Customer Name / M/S *</label>
+                  <input type="text" id="q-cust-name" class="form-input" placeholder="e.g. Nabico Enterprises Ltd">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Attention (ATTN)</label>
+                  <input type="text" id="q-cust-attn" class="form-input" placeholder="e.g. Sales Manager">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">TEL / Phone</label>
+                  <input type="tel" id="q-cust-phone" class="form-input" placeholder="e.g. 0712 345 678">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">E-MAIL</label>
+                  <input type="email" id="q-cust-email" class="form-input" placeholder="e.g. info@client.co.ke">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">REF. NO.</label>
+                  <input type="text" id="q-cust-ref" class="form-input" placeholder="e.g. PO-8374">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Payment Terms</label>
+                  <select id="q-cust-terms" class="form-select">
+                    <option value="cash">Cash</option>
+                    <option value="credit">Credit (30/60 Days)</option>
+                    <option value="mpesa">M-Pesa</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="padding:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 style="margin:0; font-size:14px;">Quoted Items</h4>
+                <div class="search-wrap" style="width:280px; position:relative;">
+                  ${icons.search}
+                  <input type="text" id="q-part-search" class="search-input" placeholder="Search and add part..." oninput="App.searchQuotationParts(this.value)">
+                  <div id="q-part-search-results" class="search-results-dropdown hidden" style="position:absolute; top:40px; left:0; right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); z-index:100; max-height:250px; overflow-y:auto;"></div>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width:50px">Sr.No</th>
+                      <th style="width:100px">Code</th>
+                      <th>Description</th>
+                      <th>Tech Name</th>
+                      <th>Brand</th>
+                      <th style="width:70px; text-align:center">Qty</th>
+                      <th style="width:110px">Unit Price</th>
+                      <th style="width:80px; text-align:center">Disc (%)</th>
+                      <th>Total</th>
+                      <th style="width:40px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="q-items-tbody">
+                    <tr><td colspan="10" class="text-center text-muted py-4">No items added. Use search box above to add parts.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:20px">
+            <div class="card" style="padding:16px; position:sticky; top:20px;">
+              <h4 style="margin:0 0 16px; font-size:14px;">Quotation Summary</h4>
+              <div style="display:flex; flex-direction:column; gap:12px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between;">
+                  <span class="text-muted">Item Value:</span>
+                  <span id="q-summary-subtotal" style="font-weight:600">KSh 0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span class="text-muted">VAT 16%:</span>
+                  <span id="q-summary-vat" style="font-weight:600">KSh 0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border); padding-top:12px; font-size:16px;">
+                  <strong style="color:var(--text-primary)">Total:</strong>
+                  <strong id="q-summary-total" style="color:var(--success)">KSh 0.00</strong>
+                </div>
+                <div style="border-top:1px solid var(--border); padding-top:12px;">
+                  <div class="text-muted" style="font-size:11px; margin-bottom:4px;">In Words:</div>
+                  <div id="q-summary-words" style="font-size:12px; font-weight:600; color:var(--text-secondary); font-style:italic; line-height:1.4">Zero Cents Only</div>
+                </div>
+                <div class="form-group" style="margin-top:12px;">
+                  <label class="form-label">Remarks / Notes</label>
+                  <textarea id="q-remark" class="form-textarea" placeholder="e.g. Valid for 30 days. Delivery included." rows="3" style="resize:none;"></textarea>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-full mt-4" onclick="App.saveQuotation()">Save Quotation</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function searchQuotationParts(q) {
+    const dropdown = document.getElementById('q-part-search-results');
+    if (!dropdown) return;
+
+    if (!q || q.trim().length < 2) {
+      dropdown.classList.add('hidden');
+      dropdown.innerHTML = '';
+      return;
+    }
+
+    const term = q.toLowerCase();
+    const matches = state.parts.filter(p => 
+      p.name.toLowerCase().includes(term) || 
+      p.sku.toLowerCase().includes(term)
+    ).slice(0, 10);
+
+    if (matches.length === 0) {
+      dropdown.classList.remove('hidden');
+      dropdown.innerHTML = '<div style="padding:8px; text-align:center; color:var(--text-muted); font-size:12px;">No parts found</div>';
+      return;
+    }
+
+    dropdown.classList.remove('hidden');
+    dropdown.innerHTML = matches.map(p => `
+      <div class="search-result-item" onclick="App.addPartToQuotation('${p.id}'); document.getElementById('q-part-search').value=''; document.getElementById('q-part-search-results').classList.add('hidden');" style="padding:8px; border-bottom:1px solid var(--border); cursor:pointer; background:var(--bg-card);">
+        <div>
+          <div style="font-weight:600; font-size:13px; color:var(--text-primary);">${sanitize(p.name)}</div>
+          <div style="font-size:11px; color:var(--text-muted)">SKU: ${sanitize(p.sku)} • Price: ${ksh(p.unit_price)}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function addPartToQuotation(partId) {
+    const part = state.parts.find(p => p.id === partId);
+    if (!part) return;
+
+    state.quotationCart.push({
+      part_id: part.id,
+      code: part.sku || '',
+      description: part.name || '',
+      tech_name: part.technical_name || '',
+      brand: part.brand || '',
+      quantity: 1,
+      unit_price: part.unit_price || 0,
+      discount_pct: 0
+    });
+
+    updateQuotationTable();
+  }
+
+  function updateQuotationTable() {
+    const tbody = document.getElementById('q-items-tbody');
+    if (!tbody) return;
+
+    if (state.quotationCart.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">No items added. Use search box above to add parts.</td></tr>`;
+      calculateQuotationTotals();
+      return;
+    }
+
+    tbody.innerHTML = state.quotationCart.map((item, idx) => {
+      const netPrice = item.unit_price * (1 - (item.discount_pct || 0) / 100);
+      const total = netPrice * item.quantity;
+      return `
+        <tr>
+          <td style="text-align:center">${idx + 1}</td>
+          <td><input type="text" class="form-input" style="height:32px; padding:4px 8px; font-size:13px;" value="${sanitize(item.code)}" oninput="App.updateQuotationField(${idx}, 'code', this.value)"></td>
+          <td><input type="text" class="form-input" style="height:32px; padding:4px 8px; font-size:13px;" value="${sanitize(item.description)}" oninput="App.updateQuotationField(${idx}, 'description', this.value)"></td>
+          <td><input type="text" class="form-input" style="height:32px; padding:4px 8px; font-size:13px;" value="${sanitize(item.tech_name)}" oninput="App.updateQuotationField(${idx}, 'tech_name', this.value)"></td>
+          <td><input type="text" class="form-input" style="height:32px; padding:4px 8px; font-size:13px;" value="${sanitize(item.brand)}" oninput="App.updateQuotationField(${idx}, 'brand', this.value)"></td>
+          <td><input type="number" class="form-input text-center" style="height:32px; padding:4px;" min="1" value="${item.quantity}" oninput="App.updateQuotationQty(${idx}, this.value)"></td>
+          <td><input type="number" class="form-input" style="height:32px; padding:4px 8px;" min="0.01" step="0.01" value="${item.unit_price}" oninput="App.updateQuotationField(${idx}, 'unit_price', parseFloat(this.value) || 0)"></td>
+          <td><input type="number" class="form-input text-center" style="height:32px; padding:4px;" min="0" max="100" value="${item.discount_pct}" oninput="App.updateQuotationField(${idx}, 'discount_pct', parseFloat(this.value) || 0)"></td>
+          <td style="font-weight:600">${ksh(total)}</td>
+          <td><button class="icon-btn" onclick="App.removeQuotationItem(${idx})" style="color:var(--accent); min-height:auto; padding:4px;">${icons.trash}</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    calculateQuotationTotals();
+  }
+
+  function updateQuotationQty(idx, qty) {
+    const q = parseInt(qty) || 1;
+    if (state.quotationCart[idx]) {
+      state.quotationCart[idx].quantity = Math.max(1, q);
+    }
+    updateQuotationTable();
+  }
+
+  function updateQuotationField(idx, field, value) {
+    if (state.quotationCart[idx]) {
+      state.quotationCart[idx][field] = value;
+    }
+    calculateQuotationTotals();
+  }
+
+  function removeQuotationItem(idx) {
+    state.quotationCart.splice(idx, 1);
+    updateQuotationTable();
+  }
+
+  function calculateQuotationTotals() {
+    let itemValue = 0;
+    state.quotationCart.forEach(item => {
+      const netPrice = item.unit_price * (1 - (item.discount_pct || 0) / 100);
+      itemValue += netPrice * item.quantity;
+    });
+
+    const vat = itemValue * 0.16;
+    const total = itemValue + vat;
+
+    const subtotalEl = document.getElementById('q-summary-subtotal');
+    if (subtotalEl) subtotalEl.textContent = ksh(itemValue);
+    const vatEl = document.getElementById('q-summary-vat');
+    if (vatEl) vatEl.textContent = ksh(vat);
+    const totalEl = document.getElementById('q-summary-total');
+    if (totalEl) totalEl.textContent = ksh(total);
+
+    const wordsEl = document.getElementById('q-summary-words');
+    if (wordsEl) {
+      wordsEl.textContent = numberToWords(total);
+    }
+  }
+
+  async function saveQuotation() {
+    const custName = document.getElementById('q-cust-name')?.value.trim();
+    if (!custName) { showToast('Customer Name is required', 'error'); return; }
+    if (state.quotationCart.length === 0) { showToast('Add at least one item to quotation', 'error'); return; }
+
+    const btn = document.querySelector('.card button[onclick="App.saveQuotation()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+    const qNum = await DB.Quotations.getNextQuotationNumber();
+    const itemValue = state.quotationCart.reduce((sum, item) => {
+      const net = item.unit_price * (1 - (item.discount_pct || 0) / 100);
+      return sum + net * item.quantity;
+    }, 0);
+    const vat = itemValue * 0.16;
+    const total = itemValue + vat;
+
+    const quotation = {
+      quotation_number: qNum,
+      customer_name: custName,
+      customer_phone: document.getElementById('q-cust-phone')?.value.trim() || null,
+      customer_email: document.getElementById('q-cust-email')?.value.trim() || null,
+      attention_to: document.getElementById('q-cust-attn')?.value.trim() || null,
+      reference_no: document.getElementById('q-cust-ref')?.value.trim() || null,
+      payment_terms: document.getElementById('q-cust-terms')?.value || 'cash',
+      items: state.quotationCart,
+      item_value: itemValue,
+      vat_rate: 16.00,
+      vat_amount: vat,
+      total_amount: total,
+      remark: document.getElementById('q-remark')?.value.trim() || null,
+      created_by: state.user?.id || null
+    };
+
+    const { error } = await DB.Quotations.create(quotation);
+    if (error) {
+      showToast('Error saving quotation: ' + error.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save Quotation'; }
+    } else {
+      showToast(`Quotation ${qNum} saved!`, 'success');
+      App.navigate('quotations');
+    }
+  }
+
+  async function showQuotationPreviewModal(quoteId) {
+    const { data: q, error } = await DB.Quotations.getById(quoteId);
+    if (error || !q) { showToast('Error fetching quotation details', 'error'); return; }
+
+    const dateStr = new Date(q.created_at).toLocaleDateString('en-KE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const itemsHTML = q.items.map((item, idx) => {
+      const netPrice = item.unit_price * (1 - (item.discount_pct || 0) / 100);
+      const total = netPrice * item.quantity;
+      return `
+        <tr style="border-bottom:1px solid #111;">
+          <td style="text-align:center; padding:6px; border:1px solid #111;">${idx + 1}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(item.code || '—')}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(item.description)}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(item.tech_name || '—')}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(item.brand || '—')}</td>
+          <td style="text-align:center; padding:6px; border:1px solid #111;">${item.quantity}</td>
+          <td style="text-align:right; padding:6px; border:1px solid #111;">${Number(item.unit_price).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align:center; padding:6px; border:1px solid #111;">${item.discount_pct > 0 ? Number(item.discount_pct).toFixed(1) + '%' : '—'}</td>
+          <td style="text-align:right; padding:6px; border:1px solid #111;">${Number(netPrice).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align:right; padding:6px; border:1px solid #111; font-weight:600;">${Number(total).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const modal = createModal('Quotation Preview', `
+      <div class="quotation-printable" id="quotation-print-area" style="background:#fff; color:#000; font-family:'Outfit', 'Inter', sans-serif; padding:24px; border-radius:4px; max-width:800px; margin:0 auto; font-size:12px; line-height:1.4;">
+        <!-- Nabico Header -->
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <img src="logo.png" alt="Logo" style="height:54px; width:auto;" onerror="this.style.display='none';">
+            <div>
+              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">Nabico Enterprises Ltd</div>
+              <div style="font-size:10px; color:#4a4d55; margin-top:2px;">
+                P.O. Box 39639, 74 Enterprises Road, Nairobi - Kenya<br>
+                Tel: 020-2531366/7 • Cell: 0720399400 / 0733330880<br>
+                Email: statement@nabico.co.ke
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right; font-size:10px; color:#4a4d55; line-height:1.5;">
+            <strong>KIRINYAGA ROAD BRANCH</strong><br>
+            P.O. Box 39639, NAIROBI - KENYA<br>
+            Tel: +254 733 330880<br>
+            <strong>VAT:</strong> 0013960G<br>
+            <strong>PIN:</strong> P000601243D
+          </div>
+        </div>
+
+        <div style="text-align:center; font-size:15px; font-weight:800; text-decoration:underline; margin-bottom:15px; text-transform:uppercase; letter-spacing:1px; color:#000;">
+          Quotation / Proforma Invoice
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px; color:#000;">
+          <div style="border:1px solid #000; border-radius:4px; padding:10px; background:#fff;">
+            <div style="font-weight:700; font-size:10px; text-transform:uppercase; color:#555; border-bottom:1px solid #eee; padding-bottom:4px; margin-bottom:6px;">M/S (Client Details)</div>
+            <div style="font-size:13px; font-weight:700; color:#111;">${sanitize(q.customer_name)}</div>
+            <div style="margin-top:6px; color:#444; line-height:1.5;">
+              ${q.customer_phone ? `<strong>TEL/NO:</strong> ${sanitize(q.customer_phone)}<br>` : ''}
+              ${q.customer_email ? `<strong>E-MAIL:</strong> ${sanitize(q.customer_email)}` : ''}
+            </div>
+          </div>
+          <div style="border:1px solid #000; border-radius:4px; padding:10px; background:#fff;">
+            <div style="display:grid; grid-template-columns:110px 1fr; gap:6px; align-items:center; line-height:1.5;">
+              <strong>Quotation NO:</strong>
+              <span style="font-weight:700; font-size:13px; color:#c92a2a;">${sanitize(q.quotation_number)}</span>
+              <strong>Quotation DATE:</strong>
+              <span>${dateStr}</span>
+              <strong>ATTN:</strong>
+              <span>${sanitize(q.attention_to || '—')}</span>
+              <strong>REF. NO.:</strong>
+              <span>${sanitize(q.reference_no || '—')}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px; font-size:11px; font-weight:700; border-bottom:1px solid #000; padding-bottom:6px; color:#000;">
+          PAYMENT TERMS APPROVED: <span style="text-transform:uppercase; color:#c92a2a;">${sanitize(q.payment_terms)}</span>
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:11px; color:#000; border:1px solid #000;">
+          <thead>
+            <tr style="background:#f4f5f7; border-bottom:2px solid #000;">
+              <th style="padding:6px; border:1px solid #111; text-align:center; width:40px;">Sr.No</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left; width:70px;">CODE</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left;">DESCRIPTION</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left;">TECH NAME</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left;">BRAND</th>
+              <th style="padding:6px; border:1px solid #111; text-align:center; width:45px;">QTY</th>
+              <th style="padding:6px; border:1px solid #111; text-align:right; width:85px;">UNIT PRICE</th>
+              <th style="padding:6px; border:1px solid #111; text-align:center; width:55px;">DISC (%)</th>
+              <th style="padding:6px; border:1px solid #111; text-align:right; width:85px;">NET PRICE</th>
+              <th style="padding:6px; border:1px solid #111; text-align:right; width:95px;">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHTML}
+          </tbody>
+        </table>
+
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; color:#000;">
+          <div style="flex:1; max-width:440px; font-size:10px; color:#222; line-height:1.5;">
+            <div style="margin-bottom:8px;">
+              <strong>Remark:</strong> ${sanitize(q.remark || 'N/A')}
+            </div>
+            <div>
+              <strong>In Word:</strong> <span style="font-weight:700; text-transform:capitalize;">${numberToWords(q.total_amount)}</span>
+            </div>
+          </div>
+          <div style="width:250px; font-size:11px; line-height:1.8; color:#000;">
+            <div style="display:flex; justify-content:space-between;">
+              <span>Item Value (KSH):</span>
+              <strong>${Number(q.item_value).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; border-bottom:1px solid #000; padding-bottom:4px; margin-bottom:4px;">
+              <span>VAT 16% (KSH):</span>
+              <strong>${Number(q.vat_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px; border-top:1px solid #000; padding-top:4px;">
+              <strong>Total (KSH):</strong>
+              <strong style="color:#000; font-size:14px;">${Number(q.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid #000; padding-top:10px; display:flex; justify-content:space-between; align-items:flex-end; color:#000;">
+          <div style="font-size:9px; color:#333; line-height:1.5; max-width:500px;">
+            1. Any claim must be submitted within 24 hours after delivery of above goods. No claim after that time will be entertained.<br>
+            2. Not responsible for shortage, breakage and leakage of goods delivered by transporter.<br>
+            3. We reserve the right to collect the amount of this account at any time even before the time stated here in.<br>
+            4. Surcharge will be charged at 36% per annum on all overdue accounts.<br>
+            5. All claims against shortage or non delivery of goods should be done directly by the buyer to the transporter.<br>
+            6. Terms strictly cash for 30/60 days.
+          </div>
+          <div style="text-align:center; width:220px; font-size:10px;">
+            <div style="border-bottom:1px solid #000; height:45px;"></div>
+            <div style="margin-top:6px; font-weight:700;">Authorised Signature</div>
+          </div>
+        </div>
+      </div>
+    `, [
+      { text: 'Close', class: 'btn-secondary', action: () => closeModal() },
+      { text: 'Share WhatsApp', class: 'btn-secondary', action: () => shareQuotationWhatsApp(q) },
+      { text: 'Print / Save PDF', class: 'btn-primary', action: () => printQuotation() }
+    ]);
+
+    document.body.appendChild(modal);
+  }
+
+  function printQuotation() {
+    const printStyle = document.createElement('style');
+    printStyle.id = 'quotation-print-style';
+    printStyle.innerHTML = `
+      @media print {
+        @page {
+          size: A4 !important;
+          margin: 15mm !important;
+        }
+        body * {
+          visibility: hidden !important;
+        }
+        #quotation-print-area, #quotation-print-area * {
+          visibility: visible !important;
+        }
+        #quotation-print-area {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          background: #fff !important;
+          color: #000 !important;
+        }
+        .modal-backdrop, .modal, .sidebar, .main-content, #mobile-topbar, #mobile-bottom-nav {
+          display: none !important;
+        }
+      }
+    `;
+    document.head.appendChild(printStyle);
+    window.print();
+    setTimeout(() => {
+      printStyle.remove();
+    }, 1000);
+  }
+
+  function shareQuotationWhatsApp(q) {
+    const text = `Hello *${q.customer_name}*,\n\nHere is your quotation *${q.quotation_number}* from *${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}*:\n\n*Total Amount:* KSh ${Number(q.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Attention:* ${q.attention_to || 'N/A'}\n*Date:* ${new Date(q.created_at).toLocaleDateString('en-KE')}\n\nThank you for choosing us!`;
+    const url = `https://api.whatsapp.com/send?phone=${q.customer_phone || ''}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  }
+
+  function numberToWords(num) {
+    if (num === 0) return 'Zero Cents Only';
+    
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 
+                  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const scales = ['', 'Thousand', 'Million', 'Billion'];
+    
+    function convertSection(n) {
+      let str = '';
+      if (n >= 100) {
+        str += ones[Math.floor(n / 100)] + ' Hundred ';
+        n %= 100;
+      }
+      if (n >= 20) {
+        str += tens[Math.floor(n / 10)] + (n % 10 ? '-' + ones[n % 10] : '') + ' ';
+      } else if (n > 0) {
+        str += ones[n] + ' ';
+      }
+      return str;
+    }
+    
+    const parts = String(Number(num).toFixed(2)).split('.');
+    let whole = parseInt(parts[0]);
+    let cents = parseInt(parts[1]);
+    
+    let wordResult = '';
+    let scaleIndex = 0;
+    
+    if (whole === 0) {
+      wordResult = 'Zero';
+    } else {
+      while (whole > 0) {
+        const section = whole % 1000;
+        if (section > 0) {
+          wordResult = convertSection(section) + scales[scaleIndex] + ' ' + wordResult;
+        }
+        whole = Math.floor(whole / 1000);
+        scaleIndex++;
+      }
+    }
+    
+    wordResult = wordResult.trim();
+    
+    let centStr = '';
+    if (cents > 0) {
+      centStr = ' And ' + convertSection(cents).trim() + ' Cents';
+    } else {
+      centStr = ' Only';
+    }
+    
+    return wordResult + centStr;
+  }
+
+  // ============================================================
   // REPORTS
+
   // ============================================================
 
   async function renderReports(container) {
@@ -2684,17 +3332,23 @@ const App = (() => {
     state.operators = ops || [];
 
     tbody.innerHTML = state.operators.map(op => {
-      const isProtected = op.role === 'owner' || op.id === state.operator?.id;
+      const isSelf = op.id === state.operator?.id;
+      const isProtectedOwner = op.role === 'owner' && !isSelf;
+      
+      const resetAction = op.email ? `<button class="btn btn-secondary btn-sm" onclick="App.triggerOperatorPasswordReset('${op.email}', '${op.name}')">Reset Password</button>` : '';
+      const deleteAction = (op.role !== 'owner' && !isSelf) ? `<button class="btn btn-secondary btn-sm" onclick="App.deleteOperator('${op.id}')" style="color:var(--accent)">Delete</button>` : '';
+
       return `
         <tr>
           <td style="font-weight:600">${sanitize(op.name)}</td>
           <td>${sanitize(op.email || '')}</td>
           <td><span class="badge ${op.role === 'owner' ? 'badge-credit' : 'badge-cash'}">${op.role}</span></td>
           <td>
-            ${isProtected 
-              ? `<span style="font-size:11px; color:var(--text-muted)">Protected</span>` 
-              : `<button class="btn btn-secondary btn-sm" onclick="App.deleteOperator('${op.id}')" style="color:var(--accent)">Delete</button>`
-            }
+            <div style="display:flex; gap:6px; align-items:center;">
+              ${resetAction}
+              ${deleteAction}
+              ${isProtectedOwner ? `<span style="font-size:11px; color:var(--text-muted)">Protected</span>` : ''}
+            </div>
           </td>
         </tr>
       `;
@@ -2870,7 +3524,7 @@ const App = (() => {
             <div class="settings-nav-item" onclick="App.showSettingsSection('operators', this)">Operators</div>
             <div class="settings-nav-item" onclick="App.showSettingsSection('sourcing', this)">Sourcing Logs</div>
             <div class="settings-nav-item" onclick="App.showSettingsSection('backup', this)">Backup</div>
-            <div class="settings-nav-item" onclick="App.showSettingsSection('security', this)">Change Password</div>
+            ${state.operator?.role === 'owner' ? `<div class="settings-nav-item" onclick="App.showSettingsSection('security', this)">Change Password</div>` : ''}
           </div>
           <div class="settings-section" id="settings-content">
             ${renderSettingsProfile()}
@@ -2892,7 +3546,13 @@ const App = (() => {
       case 'operators': renderSettingsOperators(content); break;
       case 'sourcing': renderSettingsSourcingLogs(content); break;
       case 'backup': content.innerHTML = renderSettingsBackup(); break;
-      case 'security': content.innerHTML = renderSettingsSecurity(); break;
+      case 'security':
+        if (state.operator?.role !== 'owner') {
+          content.innerHTML = `<div class="settings-card"><div class="settings-card-title">Access Denied</div><p style="font-size:13px; color:var(--text-muted)">Change password is disabled for employee accounts.</p></div>`;
+        } else {
+          content.innerHTML = renderSettingsSecurity();
+        }
+        break;
     }
   }
 
@@ -3017,17 +3677,9 @@ const App = (() => {
       <div class="settings-card">
         <div class="settings-card-title">Change Password</div>
         <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">
-          Update your operator account password to authorize actions and access protected areas.
+          Send a password reset email to your registered email address (<strong>${sanitize(state.operator?.email || '')}</strong>). You will receive a secure link to verify ownership and choose a new password.
         </p>
-        <div class="form-group" style="max-width: 400px; margin-bottom: 12px;">
-          <label class="form-label">New Password</label>
-          <input type="password" id="sec-new-password" class="form-input" placeholder="Enter new password">
-        </div>
-        <div class="form-group" style="max-width: 400px; margin-bottom: 16px;">
-          <label class="form-label">Confirm New Password</label>
-          <input type="password" id="sec-confirm-password" class="form-input" placeholder="Confirm new password">
-        </div>
-        <button class="btn btn-primary" onclick="App.changeUserPassword()">Update Password</button>
+        <button class="btn btn-primary" onclick="App.triggerSelfPasswordReset()">Send Reset Link</button>
       </div>
     `;
   }
@@ -3062,39 +3714,81 @@ const App = (() => {
     showToast('Receipt settings saved!', 'success');
   }
 
-  async function changeUserPassword() {
-    const newPwd = document.getElementById('sec-new-password')?.value;
-    const confirmPwd = document.getElementById('sec-confirm-password')?.value;
+  async function triggerSelfPasswordReset() {
+    const email = state.operator?.email;
+    if (!email) { showToast('Operator email not found', 'error'); return; }
 
-    if (!newPwd) { showToast('New password is required', 'error'); return; }
-    if (newPwd.length < 4 || newPwd.length > 32) {
-      showToast('Password must be between 4 and 32 characters', 'error');
-      return;
-    }
-    if (newPwd !== confirmPwd) { showToast('Passwords do not match', 'error'); return; }
-
-    const btn = document.querySelector('.settings-card button[onclick="App.changeUserPassword()"]');
+    const btn = document.querySelector('.settings-card button[onclick="App.triggerSelfPasswordReset()"]');
     if (btn) {
       btn.disabled = true;
-      btn.textContent = 'Updating...';
+      btn.textContent = 'Sending...';
     }
 
-    const { error } = await DB.Auth.updatePassword(newPwd);
+    const { error } = await DB.Auth.resetPassword(email);
     if (error) {
-      showToast('Error updating password: ' + error.message, 'error');
+      showToast('Error sending reset link: ' + error.message, 'error');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Update Password';
+        btn.textContent = 'Send Reset Link';
       }
     } else {
-      showToast('Password updated successfully!', 'success');
-      document.getElementById('sec-new-password').value = '';
-      document.getElementById('sec-confirm-password').value = '';
+      showToast('Password reset link sent to ' + email, 'success');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Update Password';
+        btn.textContent = 'Reset Link Sent';
       }
     }
+  }
+
+  async function triggerOperatorPasswordReset(email, name) {
+    if (!confirm(`Send password reset link to ${name} (${email})?`)) return;
+    const { error } = await DB.Auth.resetPassword(email);
+    if (error) {
+      showToast('Error sending reset link: ' + error.message, 'error');
+    } else {
+      showToast(`Password reset link sent to ${name}!`, 'success');
+    }
+  }
+
+  function showResetPasswordModal() {
+    const modal = createModal('Reset Password', `
+      <div style="font-size:13px; color:var(--text-muted); text-align:center; margin-bottom:12px">
+        Enter your new password below to reset your account.
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Password</label>
+        <input type="password" id="reset-new-password" class="form-input" placeholder="Enter new password" style="text-align:center;">
+      </div>
+      <div class="form-group" style="margin-top:10px;">
+        <label class="form-label">Confirm New Password</label>
+        <input type="password" id="reset-confirm-password" class="form-input" placeholder="Confirm new password" style="text-align:center;">
+      </div>
+    `, [
+      { text: 'Cancel', class: 'btn-secondary', action: () => closeModal() },
+      { text: 'Reset Password', class: 'btn-primary', action: async () => {
+          const newPwd = document.getElementById('reset-new-password')?.value;
+          const confirmPwd = document.getElementById('reset-confirm-password')?.value;
+          if (!newPwd) { showToast('New password is required', 'error'); return; }
+          if (newPwd.length < 4 || newPwd.length > 32) { showToast('Password must be between 4 and 32 characters', 'error'); return; }
+          if (newPwd !== confirmPwd) { showToast('Passwords do not match', 'error'); return; }
+
+          const btn = document.querySelector('#part-modal .btn-primary');
+          if (btn) { btn.disabled = true; btn.textContent = 'Updating...'; }
+
+          const { error } = await DB.Auth.updatePassword(newPwd);
+          if (error) {
+            showToast('Error updating password: ' + error.message, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Reset Password'; }
+          } else {
+            showToast('Password updated successfully! Logging you in...', 'success');
+            closeModal();
+            window.location.hash = '';
+            window.location.reload();
+          }
+        }
+      }
+    ]);
+    document.body.appendChild(modal);
   }
 
   function showAddSupplierModal() {
@@ -3258,12 +3952,18 @@ const App = (() => {
     toggleSelectAll, updateBulkButtons, exportInventoryCSV, showTransferStockModal,
     // Credits
     filterCredits, filterCreditStatus, toggleCreditHistory, showPaymentModal, recordPayment,
+    // Quotations
+    renderQuotationForm, searchQuotationParts, addPartToQuotation, updateQuotationTable,
+    updateQuotationQty, updateQuotationField, removeQuotationItem, calculateQuotationTotals,
+    saveQuotation, showQuotationPreviewModal, printQuotation, shareQuotationWhatsApp,
+    filterQuotations, deleteQuotation,
     // Reports
     loadReportPeriod, loadCustomDateRange, exportSalesCSV,
     // Settings
     showSettingsSection, selectTheme, saveShopProfile, saveReceiptSettings,
     showAddSupplierModal, addSupplier, deleteSupplier, exportBackup,
-    addOperator, deleteOperator, exportSourcingCSV, changeUserPassword,
+    addOperator, deleteOperator, exportSourcingCSV,
+    triggerSelfPasswordReset, triggerOperatorPasswordReset,
     // Operators
     confirmSwitchOperator, navigateWithPIN,
     // Customers
@@ -3290,6 +3990,8 @@ const App = (() => {
         if (event === 'SIGNED_OUT') {
           document.getElementById('app').classList.add('hidden');
           renderAuth();
+        } else if (event === 'PASSWORD_RECOVERY') {
+          showResetPasswordModal();
         }
       });
     }

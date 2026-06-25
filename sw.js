@@ -5,7 +5,7 @@
 
 // This timestamp changes every time you edit this file and redeploy
 // It forces all clients to dump old cache and fetch new files
-const CACHE_VERSION = 'sahaja-2026-06-25-v5';
+const CACHE_VERSION = 'sahaja-2026-06-25-v6';
 const CACHE_NAME = `sahaja-shop-${CACHE_VERSION}`;
 
 const SHELL_FILES = [

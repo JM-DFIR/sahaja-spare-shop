@@ -24,7 +24,12 @@
 const SUPABASE_URL = 'https://cirunbcvqsssneyuykyp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpcnVuYmN2cXNzc25leXV5a3lwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5MzExNTQsImV4cCI6MjA5NzUwNzE1NH0.-bSuzDZtIUVeDYP68uLiniNXOLjl5sfRfHdcIG2zCpc';
 
-const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: window.sessionStorage,
+    persistSession: true
+  }
+});
 
 // ============================================================
 // COLUMN MAPPERS — normalize DB columns to app field names
@@ -115,6 +120,11 @@ const Auth = {
   },
   async updatePassword(newPassword) {
     return _supabase.auth.updateUser({ password: newPassword });
+  },
+  async resetPassword(email) {
+    return _supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
   }
 };
 
@@ -787,6 +797,59 @@ const SourcingLogs = {
 };
 
 // ============================================================
+// QUOTATIONS
+// ============================================================
+
+const Quotations = {
+  async getAll() {
+    const { data, error } = await _supabase
+      .from('quotations')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return { data: data || [], error };
+  },
+
+  async getById(id) {
+    const { data, error } = await _supabase
+      .from('quotations')
+      .select('*')
+      .eq('id', id)
+      .single();
+    return { data, error };
+  },
+
+  async create(quotation) {
+    const { data, error } = await _supabase
+      .from('quotations')
+      .insert([quotation])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async delete(id) {
+    const { error } = await _supabase
+      .from('quotations')
+      .delete()
+      .eq('id', id);
+    return { error };
+  },
+
+  async getNextQuotationNumber(prefix = 'QT') {
+    const { data } = await _supabase
+      .from('quotations')
+      .select('quotation_number')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (!data || data.length === 0) return `${prefix}-0001`;
+    const last = data[0].quotation_number || '';
+    const num = parseInt(last.split('-').pop() || '0') + 1;
+    return `${prefix}-${String(num).padStart(4, '0')}`;
+  }
+};
+
+// ============================================================
 // EXPORT
 // ============================================================
 window.DB = {
@@ -800,5 +863,6 @@ window.DB = {
   DailyClosing,
   Restock,
   Operators,
-  SourcingLogs
+  SourcingLogs,
+  Quotations
 };
