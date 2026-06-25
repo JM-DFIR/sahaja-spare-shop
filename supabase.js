@@ -262,7 +262,7 @@ const Sales = {
       customer_location: appSale.customer_location || null, // new
       operator_name: appSale.operator_name || null,         // new
       sales_channel: appSale.sales_channel || 'shop',       // new
-      created_by: appSale.operator_name || appSale.created_by || null,
+      created_by: appSale.created_by || null,
     };
 
     const { data: saleData, error: saleError } = await _supabase

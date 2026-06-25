@@ -1182,6 +1182,7 @@ const App = (() => {
         customer_location: customerLocation,
         operator_name: state.operator?.name || 'Unknown',
         sales_channel: state.currentSalesChannel || 'shop',
+        created_by: state.operator?.id || null,
         created_at: new Date().toISOString()
       };
 

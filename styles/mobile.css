@@ -428,24 +428,35 @@
   .settings-layout { flex-direction: column !important; }
   .settings-nav {
     flex-direction: row !important;
-    overflow-x: auto !important;
-    white-space: nowrap;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
     border-right: none !important;
-    border-bottom: 1px solid var(--border);
-    min-width: 0;
-    gap: 0;
-    padding: 0 8px;
+    border-bottom: none !important;
+    padding: 8px !important;
+    background: var(--bg-secondary) !important;
+    border-radius: var(--radius) !important;
+    margin-bottom: 12px !important;
   }
-  .settings-nav::-webkit-scrollbar { display: none; }
   .settings-nav-item {
     white-space: nowrap !important;
-    padding: 10px 14px !important;
+    padding: 8px 12px !important;
     border-left: none !important;
-    border-bottom: 2px solid transparent;
+    border-bottom: none !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    background: var(--bg-card) !important;
+    color: var(--text-secondary) !important;
     flex-shrink: 0;
+    font-size: 13px !important;
+    text-align: center;
+    flex: 1 1 calc(50% - 8px);
   }
-  .settings-nav-item.active { border-bottom-color: var(--accent) !important; }
-  .settings-section { padding: 14px 0 0 !important; }
+  .settings-nav-item.active {
+    background: var(--accent-muted) !important;
+    color: var(--accent) !important;
+    border-color: var(--accent) !important;
+  }
+  .settings-section { padding: 0 !important; }
 
   /* ---- 13. Touch targets — min 44px ---- */
   .btn, .icon-btn { min-height: 40px; }
