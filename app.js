@@ -1404,6 +1404,14 @@ const App = (() => {
             <option value="out">Out of Stock</option>
             <option value="good">In Stock</option>
           </select>
+          <select class="filter-select" id="inv-sort-filter" onchange="App.filterInventory()">
+            <option value="name-asc">Sort: A - Z</option>
+            <option value="name-desc">Sort: Z - A</option>
+            <option value="date-desc">Newest Added</option>
+            <option value="date-asc">Oldest Added</option>
+            <option value="stock-desc">Stock: High to Low</option>
+            <option value="stock-asc">Stock: Low to High</option>
+          </select>
         </div>
 
         <div class="inventory-table-wrap">
@@ -1494,12 +1502,27 @@ const App = (() => {
     const cat = document.getElementById('inv-cat-filter')?.value || '';
     const suppId = document.getElementById('inv-supplier-filter')?.value || '';
     const stockF = document.getElementById('inv-stock-filter')?.value || '';
+    const sortVal = document.getElementById('inv-sort-filter')?.value || 'name-asc';
 
-    let parts = state.parts;
+    let parts = [...state.parts];
     if (q) parts = parts.filter(p => p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q));
     if (cat) parts = parts.filter(p => p.category === cat);
     if (suppId) parts = parts.filter(p => p.supplier_id === suppId);
     if (stockF) parts = parts.filter(p => stockStatus(p) === stockF);
+
+    if (sortVal === 'name-asc') {
+      parts.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    } else if (sortVal === 'name-desc') {
+      parts.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+    } else if (sortVal === 'date-desc') {
+      parts.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } else if (sortVal === 'date-asc') {
+      parts.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+    } else if (sortVal === 'stock-desc') {
+      parts.sort((a, b) => (b.stock_qty || 0) - (a.stock_qty || 0));
+    } else if (sortVal === 'stock-asc') {
+      parts.sort((a, b) => (a.stock_qty || 0) - (b.stock_qty || 0));
+    }
 
     document.getElementById('inv-table-body').innerHTML = renderInventoryRows(parts);
     document.getElementById('inv-count').textContent = `Showing ${parts.length} of ${state.parts.length} parts`;
@@ -2142,7 +2165,7 @@ const App = (() => {
                   <th>Attention</th>
                   <th style="text-align:center">Items Count</th>
                   <th>Item Value</th>
-                  <th>Total (with 16% VAT)</th>
+                  <th>Total Amount</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -2240,19 +2263,6 @@ const App = (() => {
                   <label class="form-label">E-MAIL</label>
                   <input type="email" id="q-cust-email" class="form-input" placeholder="e.g. info@client.co.ke">
                 </div>
-                <div class="form-group">
-                  <label class="form-label">REF. NO.</label>
-                  <input type="text" id="q-cust-ref" class="form-input" placeholder="e.g. PO-8374">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Payment Terms</label>
-                  <select id="q-cust-terms" class="form-select">
-                    <option value="cash">Cash</option>
-                    <option value="credit">Credit (30/60 Days)</option>
-                    <option value="mpesa">M-Pesa</option>
-                    <option value="cheque">Cheque</option>
-                  </select>
-                </div>
               </div>
             </div>
 
@@ -2261,7 +2271,7 @@ const App = (() => {
                 <h4 style="margin:0; font-size:14px;">Quoted Items</h4>
                 <div class="search-wrap" style="width:280px; position:relative;">
                   ${icons.search}
-                  <input type="text" id="q-part-search" class="search-input" placeholder="Search and add part..." oninput="App.searchQuotationParts(this.value)">
+                  <input type="text" id="q-part-search" class="search-input" placeholder="Search and add part..." oninput="App.searchQuotationParts(this.value)" onfocus="App.searchQuotationParts(this.value)">
                   <div id="q-part-search-results" class="search-results-dropdown hidden" style="position:absolute; top:40px; left:0; right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); z-index:100; max-height:250px; overflow-y:auto;"></div>
                 </div>
               </div>
@@ -2298,10 +2308,6 @@ const App = (() => {
                   <span class="text-muted">Item Value:</span>
                   <span id="q-summary-subtotal" style="font-weight:600">KSh 0.00</span>
                 </div>
-                <div style="display:flex; justify-content:space-between;">
-                  <span class="text-muted">VAT 16%:</span>
-                  <span id="q-summary-vat" style="font-weight:600">KSh 0.00</span>
-                </div>
                 <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border); padding-top:12px; font-size:16px;">
                   <strong style="color:var(--text-primary)">Total:</strong>
                   <strong id="q-summary-total" style="color:var(--success)">KSh 0.00</strong>
@@ -2327,17 +2333,16 @@ const App = (() => {
     const dropdown = document.getElementById('q-part-search-results');
     if (!dropdown) return;
 
-    if (!q || q.trim().length < 2) {
-      dropdown.classList.add('hidden');
-      dropdown.innerHTML = '';
-      return;
+    const term = (q || '').trim().toLowerCase();
+    let matches = [];
+    if (!term) {
+      matches = state.parts.slice(0, 50); // Show first 50 parts if search is empty
+    } else {
+      matches = state.parts.filter(p => 
+        (p.name || '').toLowerCase().includes(term) || 
+        (p.sku || '').toLowerCase().includes(term)
+      ).slice(0, 50);
     }
-
-    const term = q.toLowerCase();
-    const matches = state.parts.filter(p => 
-      p.name.toLowerCase().includes(term) || 
-      p.sku.toLowerCase().includes(term)
-    ).slice(0, 10);
 
     if (matches.length === 0) {
       dropdown.classList.remove('hidden');
@@ -2347,11 +2352,12 @@ const App = (() => {
 
     dropdown.classList.remove('hidden');
     dropdown.innerHTML = matches.map(p => `
-      <div class="search-result-item" onclick="App.addPartToQuotation('${p.id}'); document.getElementById('q-part-search').value=''; document.getElementById('q-part-search-results').classList.add('hidden');" style="padding:8px; border-bottom:1px solid var(--border); cursor:pointer; background:var(--bg-card);">
+      <div class="search-result-item" onclick="App.addPartToQuotation('${p.id}'); document.getElementById('q-part-search').value=''; document.getElementById('q-part-search-results').classList.add('hidden');" style="padding:8px; border-bottom:1px solid var(--border); cursor:pointer; background:var(--bg-card); display:flex; justify-content:space-between; align-items:center;">
         <div>
           <div style="font-weight:600; font-size:13px; color:var(--text-primary);">${sanitize(p.name)}</div>
-          <div style="font-size:11px; color:var(--text-muted)">SKU: ${sanitize(p.sku)} • Price: ${ksh(p.unit_price)}</div>
+          <div style="font-size:11px; color:var(--text-muted)">SKU: ${sanitize(p.sku || '—')}</div>
         </div>
+        <div style="font-weight:600; font-size:12px; color:var(--success)">${ksh(p.selling_price)}</div>
       </div>
     `).join('');
   }
@@ -2367,7 +2373,7 @@ const App = (() => {
       tech_name: part.technical_name || '',
       brand: part.brand || '',
       quantity: 1,
-      unit_price: part.unit_price || 0,
+      unit_price: part.selling_price || 0,
       discount_pct: 0
     });
 
@@ -2433,19 +2439,14 @@ const App = (() => {
       itemValue += netPrice * item.quantity;
     });
 
-    const vat = itemValue * 0.16;
-    const total = itemValue + vat;
-
     const subtotalEl = document.getElementById('q-summary-subtotal');
     if (subtotalEl) subtotalEl.textContent = ksh(itemValue);
-    const vatEl = document.getElementById('q-summary-vat');
-    if (vatEl) vatEl.textContent = ksh(vat);
     const totalEl = document.getElementById('q-summary-total');
-    if (totalEl) totalEl.textContent = ksh(total);
+    if (totalEl) totalEl.textContent = ksh(itemValue);
 
     const wordsEl = document.getElementById('q-summary-words');
     if (wordsEl) {
-      wordsEl.textContent = numberToWords(total);
+      wordsEl.textContent = numberToWords(itemValue);
     }
   }
 
@@ -2462,8 +2463,7 @@ const App = (() => {
       const net = item.unit_price * (1 - (item.discount_pct || 0) / 100);
       return sum + net * item.quantity;
     }, 0);
-    const vat = itemValue * 0.16;
-    const total = itemValue + vat;
+    const total = itemValue;
 
     const quotation = {
       quotation_number: qNum,
@@ -2471,15 +2471,16 @@ const App = (() => {
       customer_phone: document.getElementById('q-cust-phone')?.value.trim() || null,
       customer_email: document.getElementById('q-cust-email')?.value.trim() || null,
       attention_to: document.getElementById('q-cust-attn')?.value.trim() || null,
-      reference_no: document.getElementById('q-cust-ref')?.value.trim() || null,
-      payment_terms: document.getElementById('q-cust-terms')?.value || 'cash',
+      reference_no: null,
+      payment_terms: 'cash',
       items: state.quotationCart,
       item_value: itemValue,
-      vat_rate: 16.00,
-      vat_amount: vat,
+      vat_rate: 0,
+      vat_amount: 0,
       total_amount: total,
       remark: document.getElementById('q-remark')?.value.trim() || null,
-      created_by: state.user?.id || null
+      created_by: state.user?.id || null,
+      operator_name: state.operator?.name || 'Unknown'
     };
 
     const { error } = await DB.Quotations.create(quotation);
@@ -2561,14 +2562,8 @@ const App = (() => {
               <span>${dateStr}</span>
               <strong>ATTN:</strong>
               <span>${sanitize(q.attention_to || '—')}</span>
-              <strong>REF. NO.:</strong>
-              <span>${sanitize(q.reference_no || '—')}</span>
             </div>
           </div>
-        </div>
-
-        <div style="margin-bottom:12px; font-size:11px; font-weight:700; border-bottom:1px solid #000; padding-bottom:6px; color:#000;">
-          PAYMENT TERMS APPROVED: <span style="text-transform:uppercase; color:#c92a2a;">${sanitize(q.payment_terms)}</span>
         </div>
 
         <table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:11px; color:#000; border:1px solid #000;">
@@ -2593,8 +2588,11 @@ const App = (() => {
 
         <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; color:#000;">
           <div style="flex:1; max-width:440px; font-size:10px; color:#222; line-height:1.5;">
-            <div style="margin-bottom:8px;">
+            <div style="margin-bottom:6px;">
               <strong>Remark:</strong> ${sanitize(q.remark || 'N/A')}
+            </div>
+            <div style="margin-bottom:6px;">
+              <strong>Prepared By:</strong> ${sanitize(q.operator_name || 'Unknown')}
             </div>
             <div>
               <strong>In Word:</strong> <span style="font-weight:700; text-transform:capitalize;">${numberToWords(q.total_amount)}</span>
@@ -2604,10 +2602,6 @@ const App = (() => {
             <div style="display:flex; justify-content:space-between;">
               <span>Item Value (KSH):</span>
               <strong>${Number(q.item_value).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</strong>
-            </div>
-            <div style="display:flex; justify-content:space-between; border-bottom:1px solid #000; padding-bottom:4px; margin-bottom:4px;">
-              <span>VAT 16% (KSH):</span>
-              <strong>${Number(q.vat_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</strong>
             </div>
             <div style="display:flex; justify-content:space-between; font-size:13px; border-top:1px solid #000; padding-top:4px;">
               <strong>Total (KSH):</strong>
@@ -3992,6 +3986,15 @@ const App = (() => {
           renderAuth();
         } else if (event === 'PASSWORD_RECOVERY') {
           showResetPasswordModal();
+        }
+      });
+
+      // Close quotation part search results dropdown when clicking outside
+      document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('q-part-search-results');
+        const input = document.getElementById('q-part-search');
+        if (dropdown && input && !dropdown.contains(e.target) && e.target !== input) {
+          dropdown.classList.add('hidden');
         }
       });
     }
