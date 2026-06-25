@@ -243,6 +243,7 @@ const App = (() => {
     chevronDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6,9 12,15 18,9"/></svg>`,
     user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
     quote: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>`,
+    whatsapp: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`,
   };
 
   // ============================================================
@@ -1251,7 +1252,246 @@ const App = (() => {
     }
   }
 
+  function generateProformaHTML(sale, items) {
+    const dateStr = new Date(sale.created_at || Date.now()).toLocaleDateString('en-KE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const itemsHTML = items.map((item, idx) => {
+      const partId = item.part_id || item.id;
+      const code = item.sku || item.code || '';
+      const description = item.part_name || item.description || '';
+      const unitPrice = item.unit_price || item.price || 0;
+      const quantity = item.quantity || item.qty || 0;
+      
+      const part = state.parts.find(p => p.id === partId);
+      const techName = part?.technical_name || item.tech_name || '—';
+      const brand = part?.brand || item.brand || '—';
+      const discountPct = item.discount_pct || 0;
+      const netPrice = unitPrice * (1 - discountPct / 100);
+      const total = netPrice * quantity;
+      
+      return `
+        <tr style="border-bottom:1px solid #111;">
+          <td style="text-align:center; padding:6px; border:1px solid #111;">${idx + 1}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(code)}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(description)}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(techName)}</td>
+          <td style="padding:6px; border:1px solid #111;">${sanitize(brand)}</td>
+          <td style="text-align:center; padding:6px; border:1px solid #111;">${quantity}</td>
+          <td style="text-align:right; padding:6px; border:1px solid #111;">${Number(unitPrice).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align:center; padding:6px; border:1px solid #111;">${discountPct > 0 ? Number(discountPct).toFixed(1) + '%' : '—'}</td>
+          <td style="text-align:right; padding:6px; border:1px solid #111;">${Number(netPrice).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align:right; padding:6px; border:1px solid #111; font-weight:600;">${Number(total).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="quotation-printable" id="proforma-print-area" style="background:#fff; color:#000; font-family:'Outfit', 'Inter', sans-serif; padding:24px; border-radius:4px; max-width:800px; margin:0 auto; font-size:12px; line-height:1.4; border: 1px solid var(--border);">
+        <!-- Sahaja Header -->
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <img src="logo.png" alt="Logo" style="height:54px; width:auto;" onerror="this.style.display='none';">
+            <div>
+              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">${sanitize(state.settings?.shop_name || 'SAHAJA MOTORCYCLE LIMITED')}</div>
+              <div style="font-size:10px; color:#4a4d55; margin-top:2px;">
+                Motorcycle Spare Parts & Accessories<br>
+                ${state.settings?.address ? sanitize(state.settings.address) + '<br>' : ''}
+                Tel: ${sanitize(state.settings?.phone || '')}
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right; font-size:10px; color:#4a4d55; line-height:1.5;">
+            <strong>SAHAJA SPARE SHOP</strong><br>
+            NAIROBI - KENYA<br>
+            Cell: ${sanitize(state.settings?.phone || '')}
+          </div>
+        </div>
+
+        <div style="text-align:center; font-size:15px; font-weight:800; text-decoration:underline; margin-bottom:15px; text-transform:uppercase; letter-spacing:1px; color:#000;">
+          Proforma Invoice
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px; color:#000;">
+          <div style="border:1px solid #000; border-radius:4px; padding:10px; background:#fff;">
+            <div style="font-weight:700; font-size:10px; text-transform:uppercase; color:#555; border-bottom:1px solid #eee; padding-bottom:4px; margin-bottom:6px;">M/S (Client Details)</div>
+            <div style="font-size:13px; font-weight:700; color:#111;">${sanitize(sale.customer_name || 'Cash Customer')}</div>
+            <div style="margin-top:6px; color:#444; line-height:1.5;">
+              ${sale.customer_phone ? `<strong>TEL/NO:</strong> ${sanitize(sale.customer_phone)}<br>` : ''}
+              ${sale.customer_location ? `<strong>LOCATION:</strong> ${sanitize(sale.customer_location)}` : ''}
+            </div>
+          </div>
+          <div style="border:1px solid #000; border-radius:4px; padding:10px; background:#fff;">
+            <div style="display:grid; grid-template-columns:110px 1fr; gap:6px; align-items:center; line-height:1.5;">
+              <strong>Invoice NO:</strong>
+              <span style="font-weight:700; font-size:13px; color:#c92a2a;">${sanitize(sale.receipt_number)}</span>
+              <strong>Invoice DATE:</strong>
+              <span>${dateStr}</span>
+              <strong>PAYMENT METHOD:</strong>
+              <span style="text-transform:uppercase;">${sanitize(sale.payment_method)}</span>
+            </div>
+          </div>
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:11px; color:#000; border:1px solid #000;">
+          <thead>
+            <tr style="background:#f4f5f7; border-bottom:2px solid #000;">
+              <th style="padding:6px; border:1px solid #111; text-align:center; width:40px;">Sr.No</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left; width:70px;">CODE</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left;">DESCRIPTION</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left;">TECH NAME</th>
+              <th style="padding:6px; border:1px solid #111; text-align:left;">BRAND</th>
+              <th style="padding:6px; border:1px solid #111; text-align:center; width:45px;">QTY</th>
+              <th style="padding:6px; border:1px solid #111; text-align:right; width:85px;">UNIT PRICE</th>
+              <th style="padding:6px; border:1px solid #111; text-align:center; width:55px;">DISC (%)</th>
+              <th style="padding:6px; border:1px solid #111; text-align:right; width:85px;">NET PRICE</th>
+              <th style="padding:6px; border:1px solid #111; text-align:right; width:95px;">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHTML}
+          </tbody>
+        </table>
+
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; color:#000;">
+          <div style="flex:1; max-width:440px; font-size:10px; color:#222; line-height:1.5;">
+            <div style="margin-bottom:6px;">
+              <strong>Prepared By:</strong> ${sanitize(sale.operator_name || 'Unknown')}
+            </div>
+            <div>
+              <strong>In Word:</strong> <span style="font-weight:700; text-transform:capitalize;">${numberToWords(sale.total_amount)}</span>
+            </div>
+          </div>
+          <div style="width:250px; font-size:11px; line-height:1.8; color:#000;">
+            <div style="display:flex; justify-content:space-between;">
+              <span>Subtotal (KSH):</span>
+              <strong>${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px; border-top:1px solid #000; padding-top:4px;">
+              <strong>Total (KSH):</strong>
+              <strong style="color:#000; font-size:14px;">${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid #000; padding-top:10px; display:flex; justify-content:space-between; align-items:flex-end; color:#000;">
+          <div style="font-size:9px; color:#333; line-height:1.5; max-width:500px;">
+            1. Any claim must be submitted within 24 hours after delivery of above goods. No claim after that time will be entertained.<br>
+            2. Not responsible for shortage, breakage and leakage of goods delivered by transporter.<br>
+            3. We reserve the right to collect the amount of this account at any time even before the time stated here in.<br>
+            4. All claims against shortage or non delivery of goods should be done directly by the buyer to the transporter.
+          </div>
+          <div style="text-align:center; width:220px; font-size:10px;">
+            <div style="border-bottom:1px solid #000; height:45px;"></div>
+            <div style="margin-top:6px; font-weight:700;">Authorised Signature</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function toggleReceiptView(view) {
+    const isProforma = view === 'proforma';
+    const receiptViewEl = document.getElementById('modal-receipt-view');
+    const proformaViewEl = document.getElementById('modal-proforma-view');
+    if (receiptViewEl && proformaViewEl) {
+      receiptViewEl.classList.toggle('hidden', isProforma);
+      proformaViewEl.classList.toggle('hidden', !isProforma);
+    }
+    
+    // Toggle active state for tab buttons
+    const btnReceipt = document.getElementById('btn-show-receipt');
+    const btnProforma = document.getElementById('btn-show-proforma');
+    if (btnReceipt && btnProforma) {
+      if (isProforma) {
+        btnReceipt.classList.remove('btn-primary');
+        btnReceipt.classList.add('btn-secondary');
+        btnProforma.classList.remove('btn-secondary');
+        btnProforma.classList.add('btn-primary');
+      } else {
+        btnReceipt.classList.remove('btn-secondary');
+        btnReceipt.classList.add('btn-primary');
+        btnProforma.classList.remove('btn-primary');
+        btnProforma.classList.add('btn-secondary');
+      }
+    }
+
+    // Toggle corresponding action buttons
+    const printReceiptAction = document.getElementById('btn-print-receipt-action');
+    const shareReceiptAction = document.getElementById('btn-share-receipt-action');
+    const printProformaAction = document.getElementById('btn-print-proforma-action');
+    const shareProformaAction = document.getElementById('btn-share-proforma-action');
+
+    if (printReceiptAction && shareReceiptAction && printProformaAction && shareProformaAction) {
+      printReceiptAction.classList.toggle('hidden', isProforma);
+      shareReceiptAction.classList.toggle('hidden', isProforma);
+      printProformaAction.classList.toggle('hidden', !isProforma);
+      shareProformaAction.classList.toggle('hidden', !isProforma);
+    }
+  }
+
+  function printProformaInvoice() {
+    const printStyle = document.createElement('style');
+    printStyle.id = 'proforma-print-style';
+    printStyle.innerHTML = `
+      @media print {
+        @page {
+          size: A4 !important;
+          margin: 15mm !important;
+        }
+        body * {
+          visibility: hidden !important;
+        }
+        #proforma-print-area, #proforma-print-area * {
+          visibility: visible !important;
+        }
+        #proforma-print-area {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          background: #fff !important;
+          color: #000 !important;
+        }
+        .modal-backdrop, .modal, .sidebar, .main-content, #mobile-topbar, #mobile-bottom-nav {
+          display: none !important;
+        }
+      }
+    `;
+    document.head.appendChild(printStyle);
+    window.print();
+    setTimeout(() => {
+      printStyle.remove();
+    }, 1000);
+  }
+
+  function shareReceiptWhatsApp() {
+    const data = state.activeSaleForShare;
+    if (!data) return;
+    const { sale, receiptNum } = data;
+    const phone = sale.customer_phone || '';
+    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nHere is your receipt *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}*:\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Payment Method:* ${sale.payment_method.toUpperCase()}\n\nThank you for choosing us!`;
+    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  }
+
+  function shareProformaWhatsApp() {
+    const data = state.activeSaleForShare;
+    if (!data) return;
+    const { sale, receiptNum } = data;
+    const phone = sale.customer_phone || '';
+    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nHere is your Proforma Invoice *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}* upon dispatch of your goods.\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n\nThank you for choosing us!`;
+    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  }
+
   function showReceiptModal(sale, items, receiptNum, isViewOnly = false) {
+    // Store in activeState for WhatsApp sharing callbacks
+    state.activeSaleForShare = { sale: { ...sale, receipt_number: receiptNum }, items, receiptNum };
+
     const s = state.settings;
     const receiptHTML = Receipt.generateReceiptHTML(
       { ...sale, receipt_number: receiptNum },
@@ -1259,17 +1499,14 @@ const App = (() => {
       s
     );
 
+    const proformaHTML = generateProformaHTML(
+      { ...sale, receipt_number: receiptNum },
+      items.map(i => ({ ...i, line_total: i.unit_price * i.quantity }))
+    );
+
     const modal = document.createElement('div');
     modal.className = 'modal-backdrop';
     modal.id = 'receipt-modal';
-    
-    // Add Share PDF button for mobile
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    const shareBtn = isMobile ? `
-      <button class="btn btn-secondary" onclick="App.shareReceiptPDF('${sale.id || ''}', '${receiptNum}')">
-        ${icons.download} Share PDF
-      </button>
-    ` : '';
     
     const title = isViewOnly ? `Transaction Details — ${receiptNum}` : `Sale Complete — ${receiptNum}`;
     const closeAction = isViewOnly 
@@ -1280,17 +1517,35 @@ const App = (() => {
 
     modal.innerHTML = `
       <div class="modal modal-wide">
-        <div class="modal-header">
+        <div class="modal-header no-print">
           <div class="modal-title">${title}</div>
-          <button class="modal-close no-print" onclick="${closeAction}">${icons.close}</button>
+          <button class="modal-close" onclick="${closeAction}">${icons.close}</button>
         </div>
         <div class="receipt-modal-body">
-          ${receiptHTML}
+          <!-- Toggle View Buttons -->
+          <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid var(--border); padding-bottom:10px;" class="no-print">
+            <button class="btn btn-sm btn-primary" id="btn-show-receipt" onclick="App.toggleReceiptView('receipt')">Thermal Receipt</button>
+            <button class="btn btn-sm btn-secondary" id="btn-show-proforma" onclick="App.toggleReceiptView('proforma')">Proforma Invoice</button>
+          </div>
+
+          <!-- Views -->
+          <div id="modal-receipt-view">
+            ${receiptHTML}
+          </div>
+          <div id="modal-proforma-view" class="hidden">
+            ${proformaHTML}
+          </div>
         </div>
-        <div class="receipt-actions no-print" style="gap:8px">
+        <div class="receipt-actions no-print" style="gap:8px; display:flex; flex-wrap:wrap; justify-content:center; padding:12px 16px;">
           <button class="btn btn-secondary" onclick="${closeAction}">${buttonLabel}</button>
-          ${shareBtn}
-          <button class="btn btn-primary" onclick="window.print()">${icons.print} Print Receipt</button>
+          
+          <!-- View Receipt Actions -->
+          <button class="btn btn-primary" id="btn-print-receipt-action" onclick="window.print()">${icons.print} Print Receipt</button>
+          <button class="btn btn-secondary" id="btn-share-receipt-action" onclick="App.shareReceiptWhatsApp()">${icons.whatsapp || ''} Share Receipt (WA)</button>
+          
+          <!-- View Proforma Actions -->
+          <button class="btn btn-primary hidden" id="btn-print-proforma-action" onclick="App.printProformaInvoice()">${icons.print} Print Proforma</button>
+          <button class="btn btn-secondary hidden" id="btn-share-proforma-action" onclick="App.shareProformaWhatsApp()">${icons.whatsapp || ''} Share Proforma (WA)</button>
         </div>
       </div>
     `;
@@ -2242,7 +2497,7 @@ const App = (() => {
         </div>
       </div>
       <div class="page-body">
-        <div class="pos-layout" style="grid-template-columns: 1fr 340px; gap: 20px;">
+        <div style="display:grid; grid-template-columns: 1fr 340px; gap: 20px;">
           <div style="display:flex; flex-direction:column; gap:20px">
             <div class="card" style="padding:16px;">
               <h4 style="margin:0 0 12px; font-size:14px;">Customer Info</h4>
@@ -2303,6 +2558,9 @@ const App = (() => {
           <div style="display:flex; flex-direction:column; gap:20px">
             <div class="card" style="padding:16px; position:sticky; top:20px;">
               <h4 style="margin:0 0 16px; font-size:14px;">Quotation Summary</h4>
+              <div id="q-summary-items" style="max-height:180px; overflow-y:auto; margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:10px; display:flex; flex-direction:column; gap:6px;">
+                <div style="font-size:11px; color:var(--text-muted); text-align:center; padding:8px;">No items added</div>
+              </div>
               <div style="display:flex; flex-direction:column; gap:12px; font-size:13px;">
                 <div style="display:flex; justify-content:space-between;">
                   <span class="text-muted">Item Value:</span>
@@ -2448,6 +2706,26 @@ const App = (() => {
     if (wordsEl) {
       wordsEl.textContent = numberToWords(itemValue);
     }
+
+    const summaryItemsEl = document.getElementById('q-summary-items');
+    if (summaryItemsEl) {
+      if (state.quotationCart.length === 0) {
+        summaryItemsEl.innerHTML = '<div style="font-size:11px; color:var(--text-muted); text-align:center; padding:8px;">No items added</div>';
+      } else {
+        summaryItemsEl.innerHTML = state.quotationCart.map(item => `
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:4px 0;">
+            <div style="flex:1; min-width:0; margin-right:8px;">
+              <div style="font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${sanitize(item.description)}</div>
+              <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-mono);">${sanitize(item.code || '—')}</div>
+            </div>
+            <div style="text-align:right; flex-shrink:0;">
+              <div style="font-weight:600; color:var(--text-primary);">${item.quantity} x ${ksh(item.unit_price)}</div>
+              ${item.discount_pct > 0 ? `<div style="font-size:10px; color:var(--accent); font-weight:500;">-${item.discount_pct}% Off</div>` : ''}
+            </div>
+          </div>
+        `).join('');
+      }
+    }
   }
 
   async function saveQuotation() {
@@ -2519,25 +2797,23 @@ const App = (() => {
 
     const modal = createModal('Quotation Preview', `
       <div class="quotation-printable" id="quotation-print-area" style="background:#fff; color:#000; font-family:'Outfit', 'Inter', sans-serif; padding:24px; border-radius:4px; max-width:800px; margin:0 auto; font-size:12px; line-height:1.4;">
-        <!-- Nabico Header -->
+        <!-- Sahaja Header -->
         <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:12px;">
           <div style="display:flex; align-items:center; gap:10px;">
             <img src="logo.png" alt="Logo" style="height:54px; width:auto;" onerror="this.style.display='none';">
             <div>
-              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">Nabico Enterprises Ltd</div>
+              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">${sanitize(state.settings?.shop_name || 'SAHAJA MOTORCYCLE LIMITED')}</div>
               <div style="font-size:10px; color:#4a4d55; margin-top:2px;">
-                P.O. Box 39639, 74 Enterprises Road, Nairobi - Kenya<br>
-                Tel: 020-2531366/7 • Cell: 0720399400 / 0733330880<br>
-                Email: statement@nabico.co.ke
+                Motorcycle Spare Parts & Accessories<br>
+                ${state.settings?.address ? sanitize(state.settings.address) + '<br>' : ''}
+                Tel: ${sanitize(state.settings?.phone || '')}
               </div>
             </div>
           </div>
           <div style="text-align:right; font-size:10px; color:#4a4d55; line-height:1.5;">
-            <strong>KIRINYAGA ROAD BRANCH</strong><br>
-            P.O. Box 39639, NAIROBI - KENYA<br>
-            Tel: +254 733 330880<br>
-            <strong>VAT:</strong> 0013960G<br>
-            <strong>PIN:</strong> P000601243D
+            <strong>SAHAJA SPARE SHOP</strong><br>
+            NAIROBI - KENYA<br>
+            Cell: ${sanitize(state.settings?.phone || '')}
           </div>
         </div>
 
@@ -2615,9 +2891,7 @@ const App = (() => {
             1. Any claim must be submitted within 24 hours after delivery of above goods. No claim after that time will be entertained.<br>
             2. Not responsible for shortage, breakage and leakage of goods delivered by transporter.<br>
             3. We reserve the right to collect the amount of this account at any time even before the time stated here in.<br>
-            4. Surcharge will be charged at 36% per annum on all overdue accounts.<br>
-            5. All claims against shortage or non delivery of goods should be done directly by the buyer to the transporter.<br>
-            6. Terms strictly cash for 30/60 days.
+            4. All claims against shortage or non delivery of goods should be done directly by the buyer to the transporter.
           </div>
           <div style="text-align:center; width:220px; font-size:10px;">
             <div style="border-bottom:1px solid #000; height:45px;"></div>
@@ -3940,6 +4214,7 @@ const App = (() => {
     // POS
     filterPOSParts, setPOSCategory, addToCart, updateCartQty, removeFromCart,
     setPayMethod, processSale, switchPOSTab, setSalesChannel, shareReceiptPDF, viewTransactionDetails,
+    toggleReceiptView, printProformaInvoice, shareReceiptWhatsApp, shareProformaWhatsApp,
     // Inventory
     filterInventory, showAddPartModal, showEditPartModal, previewPartImage,
     clearPartImage, updateMarginPreview, savePartForm, quickRestock, deletePart,
