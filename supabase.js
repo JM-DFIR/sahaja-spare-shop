@@ -80,7 +80,7 @@ function unmapPart(appPart) {
   const db = {
     name: appPart.name,
     code: appPart.sku || null,
-    qty: (appPart.shop_qty ?? 0) + (appPart.ground_qty ?? 0), // total qty = shop + ground
+    qty: appPart.stock_qty !== undefined ? appPart.stock_qty : ((appPart.shop_qty ?? 0) + (appPart.ground_qty ?? 0)),
     shop_qty: appPart.shop_qty ?? 0,
     ground_qty: appPart.ground_qty ?? 0,
     min_qty: appPart.min_stock_threshold ?? 5,

@@ -1618,15 +1618,14 @@ const App = (() => {
       buying_price: parseFloat(document.getElementById('pf-buy').value) || 0,
       min_stock_threshold: parseInt(document.getElementById('pf-min').value) || 5,
       supplier_id: document.getElementById('pf-supplier').value || null,
+      stock_qty: newQty,
     };
 
     if (existingPart) {
-      const ground = existingPart.ground_qty || 0;
-      const shop = Math.max(0, newQty - ground);
-      partData.shop_qty = shop;
-      partData.ground_qty = ground;
+      partData.shop_qty = existingPart.shop_qty || 0;
+      partData.ground_qty = existingPart.ground_qty || 0;
     } else {
-      partData.shop_qty = newQty;
+      partData.shop_qty = 0;
       partData.ground_qty = 0;
     }
 
@@ -1834,8 +1833,10 @@ const App = (() => {
     } else if (fromPool === 'general') {
       if (toPool === 'ground') {
         newGroundQty += qty;
+        newShopQty = (part.stock_qty || 0) - newGroundQty;
       } else {
         newShopQty += qty;
+        newGroundQty = (part.stock_qty || 0) - newShopQty;
       }
     }
     
