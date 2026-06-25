@@ -915,3 +915,23 @@ tr:last-child td { border-bottom: none; }
   justify-content: center;
 }
 
+/* ---- QUOTATION PRINTABLE STYLES FOR PRINT/PREVIEW ---- */
+.quotation-printable th {
+  background: #f4f5f7 !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+  border: 1px solid #111111 !important;
+}
+
+.quotation-printable td {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #111111 !important;
+}
+
+.quotation-printable tr:hover td {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+
+
