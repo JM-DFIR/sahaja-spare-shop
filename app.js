@@ -1206,6 +1206,8 @@ const App = (() => {
           payment_history: [],
           sale_id: saleData.id
         });
+        const { data: freshCredits } = await DB.Credits.getAll();
+        state.credits = freshCredits || [];
       }
 
       // Refresh parts (stock updated)
@@ -1918,7 +1920,11 @@ const App = (() => {
   // CREDITS
   // ============================================================
 
-  function renderCredits(container) {
+  async function renderCredits(container) {
+    const { data, error } = await DB.Credits.getAll();
+    if (!error && data) {
+      state.credits = data;
+    }
     const total = state.credits.filter(c => c.status === 'pending').reduce((s, c) => s + (c.amount_owed || 0), 0);
 
     container.innerHTML = `
@@ -2864,6 +2870,7 @@ const App = (() => {
             <div class="settings-nav-item" onclick="App.showSettingsSection('operators', this)">Operators</div>
             <div class="settings-nav-item" onclick="App.showSettingsSection('sourcing', this)">Sourcing Logs</div>
             <div class="settings-nav-item" onclick="App.showSettingsSection('backup', this)">Backup</div>
+            <div class="settings-nav-item" onclick="App.showSettingsSection('security', this)">Change Password</div>
           </div>
           <div class="settings-section" id="settings-content">
             ${renderSettingsProfile()}
@@ -2885,6 +2892,7 @@ const App = (() => {
       case 'operators': renderSettingsOperators(content); break;
       case 'sourcing': renderSettingsSourcingLogs(content); break;
       case 'backup': content.innerHTML = renderSettingsBackup(); break;
+      case 'security': content.innerHTML = renderSettingsSecurity(); break;
     }
   }
 
@@ -3004,6 +3012,26 @@ const App = (() => {
     `;
   }
 
+  function renderSettingsSecurity() {
+    return `
+      <div class="settings-card">
+        <div class="settings-card-title">Change Password</div>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">
+          Update your operator account password to authorize actions and access protected areas.
+        </p>
+        <div class="form-group" style="max-width: 400px; margin-bottom: 12px;">
+          <label class="form-label">New Password</label>
+          <input type="password" id="sec-new-password" class="form-input" placeholder="Enter new password">
+        </div>
+        <div class="form-group" style="max-width: 400px; margin-bottom: 16px;">
+          <label class="form-label">Confirm New Password</label>
+          <input type="password" id="sec-confirm-password" class="form-input" placeholder="Confirm new password">
+        </div>
+        <button class="btn btn-primary" onclick="App.changeUserPassword()">Update Password</button>
+      </div>
+    `;
+  }
+
   function selectTheme(themeId, el) {
     applyTheme(themeId);
     document.querySelectorAll('.theme-option').forEach(o => o.classList.remove('active'));
@@ -3032,6 +3060,41 @@ const App = (() => {
     Object.assign(state.settings, updates);
     await DB.ShopSettings.save(state.settings);
     showToast('Receipt settings saved!', 'success');
+  }
+
+  async function changeUserPassword() {
+    const newPwd = document.getElementById('sec-new-password')?.value;
+    const confirmPwd = document.getElementById('sec-confirm-password')?.value;
+
+    if (!newPwd) { showToast('New password is required', 'error'); return; }
+    if (newPwd.length < 4 || newPwd.length > 32) {
+      showToast('Password must be between 4 and 32 characters', 'error');
+      return;
+    }
+    if (newPwd !== confirmPwd) { showToast('Passwords do not match', 'error'); return; }
+
+    const btn = document.querySelector('.settings-card button[onclick="App.changeUserPassword()"]');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Updating...';
+    }
+
+    const { error } = await DB.Auth.updatePassword(newPwd);
+    if (error) {
+      showToast('Error updating password: ' + error.message, 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Update Password';
+      }
+    } else {
+      showToast('Password updated successfully!', 'success');
+      document.getElementById('sec-new-password').value = '';
+      document.getElementById('sec-confirm-password').value = '';
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Update Password';
+      }
+    }
   }
 
   function showAddSupplierModal() {
@@ -3200,7 +3263,7 @@ const App = (() => {
     // Settings
     showSettingsSection, selectTheme, saveShopProfile, saveReceiptSettings,
     showAddSupplierModal, addSupplier, deleteSupplier, exportBackup,
-    addOperator, deleteOperator, exportSourcingCSV,
+    addOperator, deleteOperator, exportSourcingCSV, changeUserPassword,
     // Operators
     confirmSwitchOperator, navigateWithPIN,
     // Customers

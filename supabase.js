@@ -112,6 +112,9 @@ const Auth = {
   },
   onAuthStateChange(callback) {
     return _supabase.auth.onAuthStateChange(callback);
+  },
+  async updatePassword(newPassword) {
+    return _supabase.auth.updateUser({ password: newPassword });
   }
 };
 
