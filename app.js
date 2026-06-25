@@ -1484,13 +1484,26 @@ const App = (() => {
     }, 1000);
   }
 
+  function getFirstName(fullName) {
+    if (!fullName) return '';
+    const first = fullName.trim().split(/\s+/)[0];
+    return first.replace(/[^a-zA-Z0-9]/g, '');
+  }
+
   function saveProformaPDF() {
     const element = document.getElementById('proforma-print-area');
     if (!element) { showToast('Proforma preview not found', 'error'); return; }
     
     showToast('Generating PDF...', 'info');
     const data = state.activeSaleForShare;
-    const filename = data ? `Proforma-${data.receiptNum}.pdf` : 'Proforma.pdf';
+    let customerName = '';
+    let receiptNum = 'Invoice';
+    if (data && data.sale) {
+      customerName = data.sale.customer_name || '';
+      receiptNum = data.receiptNum || 'Invoice';
+    }
+    const firstName = getFirstName(customerName);
+    const filename = `Proforma-${receiptNum}${firstName ? '-' + firstName : ''}.pdf`;
     
     const opt = {
       margin:       0.2,
@@ -1518,110 +1531,26 @@ const App = (() => {
     return cleaned;
   }
 
-  async function shareDocumentWhatsApp({ filename, element, phone, customMsg }) {
-    if (!element) {
-      showToast('Document element not found', 'error');
-      return;
-    }
-
-    showToast('Generating PDF for sharing...', 'info');
-
-    const opt = {
-      margin:       0.2,
-      filename:     filename,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-    };
-
-    // Temporarily unhide the element if it's hidden so html2pdf can render it
-    let parentToUnhide = null;
-    if (element.classList.contains('hidden')) {
-      element.classList.remove('hidden');
-      parentToUnhide = element;
-    } else if (element.parentElement && element.parentElement.classList.contains('hidden')) {
-      element.parentElement.classList.remove('hidden');
-      parentToUnhide = element.parentElement;
-    }
-
-    try {
-      const blob = await html2pdf().set(opt).from(element).outputPdf('blob');
-      const file = new File([blob], filename, { type: 'application/pdf' });
-      
-      const cleanPhone = formatWhatsAppPhone(phone);
-
-      // Restore hidden state
-      if (parentToUnhide) {
-        parentToUnhide.classList.add('hidden');
-        parentToUnhide = null;
-      }
-
-      // Try native share if available (works on mobile, e.g. iOS/Android Safari/Chrome)
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: filename,
-            text: customMsg
-          });
-          showToast('Shared successfully!', 'success');
-          return;
-        } catch (err) {
-          if (err.name !== 'AbortError') {
-            console.error('navigator.share failed:', err);
-          } else {
-            return; // User cancelled share sheet
-          }
-        }
-      }
-
-      // Fallback for desktop/non-sharing environments:
-      // 1. Download the PDF file locally
-      triggerPDFDownload(blob, filename);
-      showToast('PDF downloaded! Opening WhatsApp. Please attach the downloaded file to the chat.', 'info');
-
-      // 2. Open WhatsApp link with pre-populated message
-      const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(customMsg)}`;
-      setTimeout(() => {
-        window.open(url, '_blank');
-      }, 1000);
-
-    } catch (err) {
-      if (parentToUnhide) {
-        parentToUnhide.classList.add('hidden');
-      }
-      showToast('Error sharing: ' + err.message, 'error');
-    }
-  }
-
   function shareReceiptWhatsApp() {
     const data = state.activeSaleForShare;
     if (!data) return;
     const { sale, receiptNum } = data;
+    const phone = formatWhatsAppPhone(sale.customer_phone || '');
     
     const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nAttached is your Receipt *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*.\n\n*Total Amount Paid:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Payment Method:* ${sale.payment_method.toUpperCase()}\n\nPlease find the attached PDF document. Thank you for choosing us!`;
-    
-    shareDocumentWhatsApp({
-      filename: `Receipt-${receiptNum}.pdf`,
-      element: document.getElementById('receipt-printable'),
-      phone: sale.customer_phone || '',
-      customMsg: text
-    });
+    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   }
 
   function shareProformaWhatsApp() {
     const data = state.activeSaleForShare;
     if (!data) return;
     const { sale, receiptNum } = data;
+    const phone = formatWhatsAppPhone(sale.customer_phone || '');
     
     const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nAttached is your Proforma Invoice *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}* upon dispatch of your goods.\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n\nPlease find the attached PDF document. Thank you for choosing us!`;
-    
-    shareDocumentWhatsApp({
-      filename: `Proforma-${receiptNum}.pdf`,
-      element: document.getElementById('proforma-print-area'),
-      phone: sale.customer_phone || '',
-      customMsg: text
-    });
+    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   }
 
   function showReceiptModal(sale, items, receiptNum, isViewOnly = false) {
@@ -3105,10 +3034,12 @@ const App = (() => {
     if (!element) { showToast('Quotation preview not found', 'error'); return; }
     
     showToast('Generating PDF...', 'info');
+    const firstName = getFirstName(q.customer_name);
+    const filename = `Quotation-${q.quotation_number}${firstName ? '-' + firstName : ''}.pdf`;
     
     const opt = {
       margin:       0.2,
-      filename:     `Quotation-${q.quotation_number}.pdf`,
+      filename:     filename,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true },
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
@@ -3122,14 +3053,10 @@ const App = (() => {
   }
 
   function shareQuotationWhatsApp(q) {
+    const phone = formatWhatsAppPhone(q.customer_phone || '');
     const text = `Hello *${q.customer_name || 'Customer'}*,\n\nAttached is your Quotation *${q.quotation_number}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*.\n\n*Total Amount:* KSh ${Number(q.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Attention:* ${q.attention_to || 'N/A'}\n*Date:* ${new Date(q.created_at).toLocaleDateString('en-KE')}\n\nPlease find the attached PDF document. Thank you for choosing us!`;
-    
-    shareDocumentWhatsApp({
-      filename: `Quotation-${q.quotation_number}.pdf`,
-      element: document.getElementById('quotation-print-area'),
-      phone: q.customer_phone || '',
-      customMsg: text
-    });
+    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   }
 
   function numberToWords(num) {
