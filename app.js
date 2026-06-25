@@ -1676,16 +1676,14 @@ const App = (() => {
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
         <div class="form-group">
           <label class="form-label">From Pool *</label>
-          <select id="transfer-from" class="form-select">
-            <option value="shop">Shop Stock</option>
-            <option value="ground">Ground Stock</option>
+          <select id="transfer-from" class="form-select" disabled>
+            <option value="">-- Choose Part First --</option>
           </select>
         </div>
         <div class="form-group">
           <label class="form-label">To Pool *</label>
           <select id="transfer-to" class="form-select" disabled>
-            <option value="ground">Ground Stock</option>
-            <option value="shop">Shop Stock</option>
+            <option value="">-- Choose Part First --</option>
           </select>
         </div>
       </div>
@@ -1719,10 +1717,20 @@ const App = (() => {
     const preview = document.getElementById('transfer-limits-preview');
     const fromSelect = document.getElementById('transfer-from');
     
+    const toSelect = document.getElementById('transfer-to');
     if (!partId) {
       if (preview) preview.style.display = 'none';
+      if (fromSelect) {
+        fromSelect.disabled = true;
+        fromSelect.innerHTML = '<option value="">-- Choose Part First --</option>';
+      }
+      if (toSelect) {
+        toSelect.disabled = true;
+        toSelect.innerHTML = '<option value="">-- Choose Part First --</option>';
+      }
       return;
     }
+    if (fromSelect) fromSelect.disabled = false;
     
     const part = state.parts.find(p => p.id === partId);
     if (!part) return;
