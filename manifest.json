@@ -1,7 +1,7 @@
 {
   "name": "Sahaja Spare Shop",
   "short_name": "Sahaja Shop",
-  "description": "Internal shop management tool for Sahaja Motorcycle Spare Parts, Nairobi CBD",
+  "description": "Internal shop management tool for Sahaja Spareshop, Nairobi CBD",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d0d0d",

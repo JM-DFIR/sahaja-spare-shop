@@ -548,7 +548,7 @@ const Suppliers = {
 
 const ShopSettings = {
   _defaults: {
-    shop_name: 'SAHAJA MOTORCYCLE LIMITED',
+    shop_name: 'Sahaja Spareshop',
     phone: '0724-399 708',
     address: 'CBD, Nairobi',
     receipt_prefix: 'SAH',
@@ -558,9 +558,13 @@ const ShopSettings = {
 
   _mapFromDB(row) {
     if (!row) return ShopSettings._defaults;
+    let name = row.name;
+    if (!name || name === 'SAHAJA MOTORCYCLE LIMITED') {
+      name = 'Sahaja Spareshop';
+    }
     return {
       ...ShopSettings._defaults,
-      shop_name: row.name || ShopSettings._defaults.shop_name,
+      shop_name: name,
       phone: row.phone || ShopSettings._defaults.phone,
       address: row.address || ShopSettings._defaults.address,
       receipt_prefix: row.prefix || ShopSettings._defaults.receipt_prefix,

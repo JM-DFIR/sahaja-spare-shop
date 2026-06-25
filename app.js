@@ -604,7 +604,7 @@ const App = (() => {
         <div class="page-header-row">
           <div>
             <div class="page-title">Overview</div>
-            <div class="page-subtitle">${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}</div>
+            <div class="page-subtitle">${state.settings.shop_name || 'Sahaja Spareshop'}</div>
             <div style="font-size:12px; color:var(--text-muted); margin-top:4px">
               Welcome back, <strong style="color:var(--accent); font-weight:600">${sanitize(state.operator?.name || 'Operator')}</strong> (${(state.operator?.role || 'employee').toUpperCase()})
             </div>
@@ -1291,7 +1291,7 @@ const App = (() => {
           <div style="display:flex; align-items:center; gap:10px;">
             <img src="logo.png" alt="Logo" style="height:54px; width:auto;" onerror="this.style.display='none';">
             <div>
-              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">${sanitize(state.settings?.shop_name || 'SAHAJA MOTORCYCLE LIMITED')}</div>
+              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">${sanitize(state.settings?.shop_name || 'Sahaja Spareshop')}</div>
               <div style="font-size:10px; color:#4a4d55; margin-top:2px;">
                 Motorcycle Spare Parts & Accessories<br>
                 ${state.settings?.address ? sanitize(state.settings.address) + '<br>' : ''}
@@ -1300,7 +1300,7 @@ const App = (() => {
             </div>
           </div>
           <div style="text-align:right; font-size:10px; color:#4a4d55; line-height:1.5;">
-            <strong>SAHAJA SPARE SHOP</strong><br>
+            <strong>Sahaja Spareshop</strong><br>
             NAIROBI - KENYA<br>
             Cell: ${sanitize(state.settings?.phone || '')}
           </div>
@@ -1418,12 +1418,14 @@ const App = (() => {
     const printReceiptAction = document.getElementById('btn-print-receipt-action');
     const shareReceiptAction = document.getElementById('btn-share-receipt-action');
     const printProformaAction = document.getElementById('btn-print-proforma-action');
+    const saveProformaPdfAction = document.getElementById('btn-save-proforma-pdf-action');
     const shareProformaAction = document.getElementById('btn-share-proforma-action');
 
     if (printReceiptAction && shareReceiptAction && printProformaAction && shareProformaAction) {
       printReceiptAction.classList.toggle('hidden', isProforma);
       shareReceiptAction.classList.toggle('hidden', isProforma);
       printProformaAction.classList.toggle('hidden', !isProforma);
+      if (saveProformaPdfAction) saveProformaPdfAction.classList.toggle('hidden', !isProforma);
       shareProformaAction.classList.toggle('hidden', !isProforma);
     }
   }
@@ -1436,6 +1438,23 @@ const App = (() => {
         @page {
           size: A4 !important;
           margin: 15mm !important;
+        }
+        body {
+          background: #fff !important;
+        }
+        .sidebar, .main-content, #mobile-topbar, #mobile-bottom-nav, .modal-header, .modal-footer {
+          display: none !important;
+        }
+        .modal-backdrop, .modal, .modal-body {
+          display: block !important;
+          position: static !important;
+          background: none !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          border: none !important;
+          width: 100% !important;
+          max-width: 100% !important;
         }
         body * {
           visibility: hidden !important;
@@ -1456,9 +1475,6 @@ const App = (() => {
           background: #fff !important;
           color: #000 !important;
         }
-        .modal-backdrop, .modal, .sidebar, .main-content, #mobile-topbar, #mobile-bottom-nav {
-          display: none !important;
-        }
       }
     `;
     document.head.appendChild(printStyle);
@@ -1468,12 +1484,51 @@ const App = (() => {
     }, 1000);
   }
 
+  function saveProformaPDF() {
+    const element = document.getElementById('proforma-print-area');
+    if (!element) { showToast('Proforma preview not found', 'error'); return; }
+    
+    showToast('Generating PDF...', 'info');
+    const data = state.activeSaleForShare;
+    const filename = data ? `Proforma-${data.receiptNum}.pdf` : 'Proforma.pdf';
+    
+    const opt = {
+      margin:       0.2,
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+    
+    html2pdf().set(opt).from(element).save().then(() => {
+      showToast('PDF downloaded successfully', 'success');
+    }).catch(err => {
+      showToast('PDF generation error: ' + err.message, 'error');
+    });
+  }
+
+  function formatWhatsAppPhone(phone) {
+    if (!phone) return '';
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.startsWith('0') && cleaned.length === 10) {
+      cleaned = '254' + cleaned.slice(1);
+    } else if (cleaned.length === 9 && !cleaned.startsWith('254')) {
+      cleaned = '254' + cleaned;
+    }
+    return cleaned;
+  }
+
   function shareReceiptWhatsApp() {
     const data = state.activeSaleForShare;
     if (!data) return;
-    const { sale, receiptNum } = data;
-    const phone = sale.customer_phone || '';
-    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nHere is your receipt *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}*:\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Payment Method:* ${sale.payment_method.toUpperCase()}\n\nThank you for choosing us!`;
+    const { sale, items, receiptNum } = data;
+    const phone = formatWhatsAppPhone(sale.customer_phone || '');
+    
+    const itemsList = items.map((item, idx) => {
+      return `${idx + 1}. ${item.part_name || item.description} (Qty: ${item.quantity}) - KSh ${Number(item.unit_price).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
+    }).join('\n');
+    
+    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nHere is your receipt *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*:\n\n*Items Purchased:*\n${itemsList}\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Payment Method:* ${sale.payment_method.toUpperCase()}\n\nThank you for choosing us!`;
     const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
@@ -1481,9 +1536,14 @@ const App = (() => {
   function shareProformaWhatsApp() {
     const data = state.activeSaleForShare;
     if (!data) return;
-    const { sale, receiptNum } = data;
-    const phone = sale.customer_phone || '';
-    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nHere is your Proforma Invoice *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}* upon dispatch of your goods.\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n\nThank you for choosing us!`;
+    const { sale, items, receiptNum } = data;
+    const phone = formatWhatsAppPhone(sale.customer_phone || '');
+    
+    const itemsList = items.map((item, idx) => {
+      return `${idx + 1}. ${item.part_name || item.description} (Qty: ${item.quantity}) - KSh ${Number(item.unit_price).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
+    }).join('\n');
+    
+    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nHere is your Proforma Invoice *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*:\n\n*Items:*\n${itemsList}\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n\nThank you for choosing us!`;
     const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
@@ -1545,6 +1605,7 @@ const App = (() => {
           
           <!-- View Proforma Actions -->
           <button class="btn btn-primary hidden" id="btn-print-proforma-action" onclick="App.printProformaInvoice()">${icons.print} Print Proforma</button>
+          <button class="btn btn-primary hidden" id="btn-save-proforma-pdf-action" onclick="App.saveProformaPDF()">${icons.download || ''} Save Proforma PDF</button>
           <button class="btn btn-secondary hidden" id="btn-share-proforma-action" onclick="App.shareProformaWhatsApp()">${icons.whatsapp || ''} Share Proforma (WA)</button>
         </div>
       </div>
@@ -1590,8 +1651,8 @@ const App = (() => {
         try {
           await navigator.share({
             files: [file],
-            title: `Sahaja Spare Shop Receipt ${receiptNum}`,
-            text: `Receipt for purchase ${receiptNum} at Sahaja Motorcycle Spare Parts.`
+            title: `Sahaja Spareshop Receipt ${receiptNum}`,
+            text: `Receipt for purchase ${receiptNum} at Sahaja Spareshop.`
           });
           showToast('Receipt shared successfully', 'success');
         } catch (err) {
@@ -2802,7 +2863,7 @@ const App = (() => {
           <div style="display:flex; align-items:center; gap:10px;">
             <img src="logo.png" alt="Logo" style="height:54px; width:auto;" onerror="this.style.display='none';">
             <div>
-              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">${sanitize(state.settings?.shop_name || 'SAHAJA MOTORCYCLE LIMITED')}</div>
+              <div style="font-size:16px; font-weight:800; color:#1a1c23; text-transform:uppercase; letter-spacing:0.5px;">${sanitize(state.settings?.shop_name || 'Sahaja Spareshop')}</div>
               <div style="font-size:10px; color:#4a4d55; margin-top:2px;">
                 Motorcycle Spare Parts & Accessories<br>
                 ${state.settings?.address ? sanitize(state.settings.address) + '<br>' : ''}
@@ -2811,7 +2872,7 @@ const App = (() => {
             </div>
           </div>
           <div style="text-align:right; font-size:10px; color:#4a4d55; line-height:1.5;">
-            <strong>SAHAJA SPARE SHOP</strong><br>
+            <strong>Sahaja Spareshop</strong><br>
             NAIROBI - KENYA<br>
             Cell: ${sanitize(state.settings?.phone || '')}
           </div>
@@ -2902,7 +2963,8 @@ const App = (() => {
     `, [
       { text: 'Close', class: 'btn-secondary', action: () => closeModal() },
       { text: 'Share WhatsApp', class: 'btn-secondary', action: () => shareQuotationWhatsApp(q) },
-      { text: 'Print / Save PDF', class: 'btn-primary', action: () => printQuotation() }
+      { text: 'Save PDF', class: 'btn-primary', action: () => saveQuotationPDF(q) },
+      { text: 'Print', class: 'btn-primary', action: () => printQuotation() }
     ]);
 
     document.body.appendChild(modal);
@@ -2916,6 +2978,23 @@ const App = (() => {
         @page {
           size: A4 !important;
           margin: 15mm !important;
+        }
+        body {
+          background: #fff !important;
+        }
+        .sidebar, .main-content, #mobile-topbar, #mobile-bottom-nav, .modal-header, .modal-footer {
+          display: none !important;
+        }
+        .modal-backdrop, .modal, .modal-body {
+          display: block !important;
+          position: static !important;
+          background: none !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          border: none !important;
+          width: 100% !important;
+          max-width: 100% !important;
         }
         body * {
           visibility: hidden !important;
@@ -2936,9 +3015,6 @@ const App = (() => {
           background: #fff !important;
           color: #000 !important;
         }
-        .modal-backdrop, .modal, .sidebar, .main-content, #mobile-topbar, #mobile-bottom-nav {
-          display: none !important;
-        }
       }
     `;
     document.head.appendChild(printStyle);
@@ -2948,9 +3024,36 @@ const App = (() => {
     }, 1000);
   }
 
+  function saveQuotationPDF(q) {
+    const element = document.getElementById('quotation-print-area');
+    if (!element) { showToast('Quotation preview not found', 'error'); return; }
+    
+    showToast('Generating PDF...', 'info');
+    
+    const opt = {
+      margin:       0.2,
+      filename:     `Quotation-${q.quotation_number}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+    
+    html2pdf().set(opt).from(element).save().then(() => {
+      showToast('PDF downloaded successfully', 'success');
+    }).catch(err => {
+      showToast('PDF generation error: ' + err.message, 'error');
+    });
+  }
+
   function shareQuotationWhatsApp(q) {
-    const text = `Hello *${q.customer_name}*,\n\nHere is your quotation *${q.quotation_number}* from *${state.settings.shop_name || 'Sahaja Motorcycle Spare Parts'}*:\n\n*Total Amount:* KSh ${Number(q.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Attention:* ${q.attention_to || 'N/A'}\n*Date:* ${new Date(q.created_at).toLocaleDateString('en-KE')}\n\nThank you for choosing us!`;
-    const url = `https://api.whatsapp.com/send?phone=${q.customer_phone || ''}&text=${encodeURIComponent(text)}`;
+    const phone = formatWhatsAppPhone(q.customer_phone || '');
+    
+    const itemsList = q.items.map((item, idx) => {
+      return `${idx + 1}. ${item.description || item.part_name} (Qty: ${item.quantity}) - KSh ${Number(item.unit_price).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
+    }).join('\n');
+    
+    const text = `Hello *${q.customer_name || 'Customer'}*,\n\nHere is your quotation *${q.quotation_number}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*:\n\n*Items Quoted:*\n${itemsList}\n\n*Total Amount:* KSh ${Number(q.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Attention:* ${q.attention_to || 'N/A'}\n*Date:* ${new Date(q.created_at).toLocaleDateString('en-KE')}\n\nThank you for choosing us!`;
+    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
 
@@ -3832,7 +3935,7 @@ const App = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Shop Name</label>
-            <input type="text" id="s-name" class="form-input" value="${sanitize(s.shop_name || 'SAHAJA MOTORCYCLE LIMITED')}">
+            <input type="text" id="s-name" class="form-input" value="${sanitize(s.shop_name || 'Sahaja Spareshop')}">
           </div>
           <div class="form-group">
             <label class="form-label">Phone Number</label>
@@ -3892,7 +3995,7 @@ const App = (() => {
         <div class="divider"></div>
         <div class="text-sm text-muted mb-3">Receipt Preview</div>
         <div class="receipt-live-preview">
-          <div style="text-align:center; font-weight:900">${sanitize(s.shop_name || 'SAHAJA MOTORCYCLE LIMITED')}</div>
+          <div style="text-align:center; font-weight:900">${sanitize(s.shop_name || 'Sahaja Spareshop')}</div>
           <div style="text-align:center; font-size:9px">Tel: ${sanitize(s.phone || '')}</div>
           <div style="text-align:center; font-size:9px">${sanitize(s.address || '')}</div>
           <hr style="border:1px dashed #bbb; margin:6px 0">
@@ -4214,7 +4317,7 @@ const App = (() => {
     // POS
     filterPOSParts, setPOSCategory, addToCart, updateCartQty, removeFromCart,
     setPayMethod, processSale, switchPOSTab, setSalesChannel, shareReceiptPDF, viewTransactionDetails,
-    toggleReceiptView, printProformaInvoice, shareReceiptWhatsApp, shareProformaWhatsApp,
+    toggleReceiptView, printProformaInvoice, saveProformaPDF, shareReceiptWhatsApp, shareProformaWhatsApp,
     // Inventory
     filterInventory, showAddPartModal, showEditPartModal, previewPartImage,
     clearPartImage, updateMarginPreview, savePartForm, quickRestock, deletePart,
@@ -4224,7 +4327,7 @@ const App = (() => {
     // Quotations
     renderQuotationForm, searchQuotationParts, addPartToQuotation, updateQuotationTable,
     updateQuotationQty, updateQuotationField, removeQuotationItem, calculateQuotationTotals,
-    saveQuotation, showQuotationPreviewModal, printQuotation, shareQuotationWhatsApp,
+    saveQuotation, showQuotationPreviewModal, printQuotation, saveQuotationPDF, shareQuotationWhatsApp,
     filterQuotations, deleteQuotation,
     // Reports
     loadReportPeriod, loadCustomDateRange, exportSalesCSV,
