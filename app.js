@@ -292,21 +292,60 @@ const App = (() => {
     const btn = document.getElementById('sign-in-btn');
     const errEl = document.getElementById('auth-error');
 
+    if (!email || !password) {
+      errEl.textContent = 'Email and password are required.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+
     btn.textContent = 'Signing in...';
     btn.disabled = true;
     errEl.classList.add('hidden');
 
-    const { data, error } = await DB.Auth.signIn(email, password);
-    if (error) {
-      errEl.textContent = 'Invalid email or password. Please try again.';
+    try {
+      // 1. Check lockout status
+      const { data: lockout, error: lockoutErr } = await DB.Operators.checkLockout(email);
+      if (lockoutErr) {
+        console.error('[Auth] Lockout check failed:', lockoutErr);
+      } else if (lockout && lockout.locked) {
+        const mins = Math.ceil(lockout.seconds_left / 60);
+        errEl.textContent = `This account is locked due to too many failed login attempts. Try again in ${mins} minute${mins !== 1 ? 's' : ''}.`;
+        errEl.classList.remove('hidden');
+        btn.textContent = 'Sign In';
+        btn.disabled = false;
+        return;
+      }
+
+      // 2. Attempt Supabase Auth Sign In
+      const { data, error } = await DB.Auth.signIn(email, password);
+      if (error) {
+        // Record failed attempt
+        const { data: attemptData } = await DB.Operators.recordFailedAttempt(email);
+        if (attemptData && attemptData.locked) {
+          errEl.textContent = 'Account locked! Too many failed login attempts. Please try again in 15 minutes.';
+        } else {
+          const attemptsMade = attemptData ? attemptData.attempts : 1;
+          const remaining = Math.max(0, 3 - attemptsMade);
+          errEl.textContent = `Invalid email or password. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining before lockout.`;
+        }
+        errEl.classList.remove('hidden');
+        btn.textContent = 'Sign In';
+        btn.disabled = false;
+        return;
+      }
+
+      // 3. Clear failed attempts on successful login
+      await DB.Operators.recordSuccessfulLogin(email);
+
+      state.user = data.user;
+      await initApp();
+    } catch (e) {
+      console.error('[Auth] Unexpected login error:', e);
+      errEl.textContent = 'An unexpected error occurred. Please try again.';
       errEl.classList.remove('hidden');
       btn.textContent = 'Sign In';
       btn.disabled = false;
-      return;
     }
-
-    state.user = data.user;
-    await initApp();
   }
 
   // ============================================================
@@ -398,21 +437,39 @@ const App = (() => {
           const btn = document.querySelector('#part-modal .btn-primary');
           if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
 
-          const { data: verified, error } = await DB.Operators.verifyPassword(state.operator.email, password);
-          if (error) {
-            showToast('Verification error: ' + error.message, 'error');
+          // 1. Check lockout status
+          const { data: lockout, error: lockoutErr } = await DB.Operators.checkLockout(state.operator.email);
+          if (lockoutErr) {
+            console.error('[Verification] Lockout check failed:', lockoutErr);
+          } else if (lockout && lockout.locked) {
+            const mins = Math.ceil(lockout.seconds_left / 60);
+            showToast(`This account is locked. Try again in ${mins} minute${mins !== 1 ? 's' : ''}.`, 'error');
             if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
             return;
           }
 
-          if (verified) {
-            closeModal();
-            onSuccess();
-          } else {
-            showToast('Incorrect password', 'error');
+          // 2. Verify Password
+          const { data: verified, error } = await DB.Operators.verifyPassword(state.operator.email, password);
+          if (error || !verified) {
+            // Record failed attempt
+            const { data: attemptData } = await DB.Operators.recordFailedAttempt(state.operator.email);
+            if (attemptData && attemptData.locked) {
+              showToast('Account locked! Too many failed password attempts. Try again in 15 minutes.', 'error');
+            } else {
+              const attemptsMade = attemptData ? attemptData.attempts : 1;
+              const remaining = Math.max(0, 3 - attemptsMade);
+              showToast(`Incorrect password. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining before lockout.`, 'error');
+            }
             if (input) { input.value = ''; input.focus(); }
             if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
+            return;
           }
+
+          // 3. Clear failed attempts on success
+          await DB.Operators.recordSuccessfulLogin(state.operator.email);
+
+          closeModal();
+          onSuccess();
         }
       }
     ]);
@@ -3584,7 +3641,6 @@ const App = (() => {
   // ============================================================
   // OWNER SECURITY & OPERATORS TABS
   // ============================================================
-
   function showOwnerPinVerificationModal(onSuccess) {
     const owners = state.operators.filter(o => o.role === 'owner');
     if (owners.length === 0) {
@@ -3596,12 +3652,20 @@ const App = (() => {
       <div style="font-size:13px; color:var(--text-muted); text-align:center; margin-bottom:12px">
         Please enter an Owner/Admin password to authorize this action.
       </div>
+      <div class="form-group" style="${owners.length <= 1 ? 'display:none' : 'margin-bottom:12px'}">
+        <label class="form-label" style="font-size:11px; margin-bottom:4px; display:block">Select Owner Profile</label>
+        <select id="owner-verification-email-select" class="form-select" style="height:38px; font-size:13px;">
+          ${owners.map(o => `<option value="${o.email}">${sanitize(o.name)} (${sanitize(o.email)})</option>`).join('')}
+        </select>
+      </div>
       <div class="form-group">
         <input type="password" id="owner-password-input" class="form-input" placeholder="Enter Owner password" maxlength="32" style="text-align:center; font-size:16px; letter-spacing:2px; height:44px; margin-bottom:12px;">
       </div>
     `, [
       { text: 'Cancel', class: 'btn-secondary', action: () => closeModal() },
       { text: 'Verify', class: 'btn-primary', action: async () => {
+          const emailSelect = document.getElementById('owner-verification-email-select');
+          const email = emailSelect ? emailSelect.value : owners[0].email;
           const input = document.getElementById('owner-password-input');
           const password = input?.value;
           if (!password) { showToast('Password is required', 'error'); return; }
@@ -3609,23 +3673,39 @@ const App = (() => {
           const btn = document.querySelector('#part-modal .btn-primary');
           if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
 
-          let verified = false;
-          for (const owner of owners) {
-            const { data } = await DB.Operators.verifyPassword(owner.email, password);
-            if (data) {
-              verified = true;
-              break;
-            }
+          // 1. Check lockout status
+          const { data: lockout, error: lockoutErr } = await DB.Operators.checkLockout(email);
+          if (lockoutErr) {
+            console.error('[Owner Verification] Lockout check failed:', lockoutErr);
+          } else if (lockout && lockout.locked) {
+            const mins = Math.ceil(lockout.seconds_left / 60);
+            showToast(`This Owner account is locked. Try again in ${mins} minute${mins !== 1 ? 's' : ''}.`, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
+            return;
           }
 
-          if (verified) {
-            closeModal();
-            onSuccess();
-          } else {
-            showToast('Verification failed: Owner credentials required', 'error');
+          // 2. Verify Password
+          const { data: verified, error } = await DB.Operators.verifyPassword(email, password);
+          if (error || !verified) {
+            // Record failed attempt
+            const { data: attemptData } = await DB.Operators.recordFailedAttempt(email);
+            if (attemptData && attemptData.locked) {
+              showToast('Owner account locked! Too many failed password attempts. Try again in 15 minutes.', 'error');
+            } else {
+              const attemptsMade = attemptData ? attemptData.attempts : 1;
+              const remaining = Math.max(0, 3 - attemptsMade);
+              showToast(`Incorrect owner password. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining before lockout.`, 'error');
+            }
             if (input) { input.value = ''; input.focus(); }
             if (btn) { btn.disabled = false; btn.textContent = 'Verify'; }
+            return;
           }
+
+          // 3. Clear failed attempts on success
+          await DB.Operators.recordSuccessfulLogin(email);
+
+          closeModal();
+          onSuccess();
         }
       }
     ]);
@@ -3707,7 +3787,15 @@ const App = (() => {
     tbody.innerHTML = state.operators.map(op => {
       const isSelf = op.id === state.operator?.id;
       const isProtectedOwner = op.role === 'owner' && !isSelf;
-      
+
+      const isLocked = op.locked_until && new Date(op.locked_until) > new Date();
+      const statusBadge = isLocked 
+        ? `<span class="badge" style="background-color:var(--accent); color:white">Locked</span>` 
+        : `<span class="badge ${op.role === 'owner' ? 'badge-credit' : 'badge-cash'}">${op.role}</span>`;
+
+      const unlockAction = isLocked 
+        ? `<button class="btn btn-secondary btn-sm" onclick="App.unlockOperator('${op.email}', '${op.name}')" style="color:var(--success)">Unlock</button>` 
+        : '';
       const resetAction = op.email ? `<button class="btn btn-secondary btn-sm" onclick="App.triggerOperatorPasswordReset('${op.email}', '${op.name}')">Reset Password</button>` : '';
       const deleteAction = (op.role !== 'owner' && !isSelf) ? `<button class="btn btn-secondary btn-sm" onclick="App.deleteOperator('${op.id}')" style="color:var(--accent)">Delete</button>` : '';
 
@@ -3715,9 +3803,10 @@ const App = (() => {
         <tr>
           <td style="font-weight:600">${sanitize(op.name)}</td>
           <td>${sanitize(op.email || '')}</td>
-          <td><span class="badge ${op.role === 'owner' ? 'badge-credit' : 'badge-cash'}">${op.role}</span></td>
+          <td>${statusBadge}</td>
           <td>
             <div style="display:flex; gap:6px; align-items:center;">
+              ${unlockAction}
               ${resetAction}
               ${deleteAction}
               ${isProtectedOwner ? `<span style="font-size:11px; color:var(--text-muted)">Protected</span>` : ''}
@@ -3770,6 +3859,17 @@ const App = (() => {
     });
   }
 
+  async function unlockOperator(email, name) {
+    showOwnerPinVerificationModal(async () => {
+      const { error } = await DB.Operators.recordSuccessfulLogin(email);
+      if (error) {
+        showToast('Error unlocking operator: ' + error.message, 'error');
+      } else {
+        showToast(`Operator ${name} has been unlocked successfully`, 'success');
+        await loadSettingsOperatorsTable();
+      }
+    });
+  }
   // ============================================================
   // SOURCING LOGS
   // ============================================================
@@ -4336,7 +4436,7 @@ const App = (() => {
     // Settings
     showSettingsSection, selectTheme, saveShopProfile, saveReceiptSettings,
     showAddSupplierModal, addSupplier, deleteSupplier, exportBackup,
-    addOperator, deleteOperator, exportSourcingCSV,
+    addOperator, deleteOperator, unlockOperator, exportSourcingCSV,
     triggerSelfPasswordReset, triggerOperatorPasswordReset,
     // Operators
     confirmSwitchOperator, navigateWithPIN,

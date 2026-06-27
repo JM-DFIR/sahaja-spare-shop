@@ -732,7 +732,7 @@ const Operators = {
   async getAll() {
     const { data, error } = await _supabase
       .from('operators')
-      .select('id, name, email, role, created_at')
+      .select('id, name, email, role, created_at, failed_attempts, locked_until')
       .order('name');
     return { data: data || [], error };
   },
@@ -773,6 +773,21 @@ const Operators = {
         p_op_id: id
       });
     return { data: !!data, error };
+  },
+
+  async checkLockout(email) {
+    const { data, error } = await _supabase.rpc('check_login_lockout', { p_email: email });
+    return { data, error };
+  },
+
+  async recordFailedAttempt(email) {
+    const { data, error } = await _supabase.rpc('record_failed_attempt', { p_email: email });
+    return { data, error };
+  },
+
+  async recordSuccessfulLogin(email) {
+    const { data, error } = await _supabase.rpc('record_successful_login', { p_email: email });
+    return { data, error };
   }
 };
 
