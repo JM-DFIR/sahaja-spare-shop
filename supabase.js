@@ -315,16 +315,24 @@ const Sales = {
 
       if (part) {
         const qtyVal = part.qty || 0;
-        let shop = part.shop_qty || 0;
-        let ground = part.ground_qty || 0;
+        const hasTransferred = (part.ground_qty ?? 0) > 0;
+        let shop = (hasTransferred || (part.shop_qty ?? 0) > 0) ? (part.shop_qty ?? 0) : qtyVal;
+        let ground = hasTransferred ? (part.ground_qty ?? 0) : shop;
 
         let deducted = 0;
         if (channel === 'ground') {
           deducted = Math.min(item.quantity, ground);
           ground = Math.max(0, ground - item.quantity);
+          if (!hasTransferred) {
+            shop = Math.max(0, qtyVal - deducted);
+            ground = 0;
+          }
         } else {
           deducted = Math.min(item.quantity, shop);
           shop = Math.max(0, shop - item.quantity);
+          if (!hasTransferred) {
+            ground = 0;
+          }
         }
 
         const newQty = Math.max(0, qtyVal - deducted);
