@@ -77,6 +77,7 @@ function mapCredit(c) {
     amount_owed: Math.max(0, remaining),                // remaining balance
     original_amount: c.total_owed ?? 0,                 // original total
     status: c.status === 'paid' ? 'cleared' : c.status, // normalize 'paid' → 'cleared' for UI
+    receipt_number: c.sales?.receipt_no || 'Credit Note' // map nested sales.receipt_no
   };
 }
 
@@ -427,7 +428,7 @@ const Credits = {
   async getAll() {
     const { data, error } = await _supabase
       .from('credits')
-      .select('*')
+      .select('*, sales(receipt_no)')
       .order('created_at', { ascending: false });
     return { data: (data || []).map(mapCredit), error };
   },

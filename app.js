@@ -867,15 +867,19 @@ const App = (() => {
         <div class="pos-grid-panel">
           <div class="pos-search-bar">
             <div class="pos-search-row">
-              <div class="search-wrap" style="flex:1">
+              <div class="search-wrap" style="flex:1; position:relative;">
                 ${icons.search}
-                <input type="text" id="pos-search" class="search-input" placeholder="Scan barcode or search by part name, SKU..." oninput="App.filterPOSParts(this.value)" autofocus>
+                <input type="text" id="pos-search" class="search-input" placeholder="Scan barcode or search by part name, SKU..." oninput="App.filterPOSParts(this.value); App.showPOSDropdown(this.value)" onfocus="App.showPOSDropdown(this.value)" autofocus>
+                <div id="pos-search-dropdown" class="search-results-dropdown hidden" style="position:absolute; top:44px; left:0; right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); z-index:100; max-height:250px; overflow-y:auto; box-shadow: 0 4px 12px rgba(0,0,0,0.5);"></div>
               </div>
               <div class="barcode-hint">${icons.barcode} Barcode</div>
             </div>
-            <div class="filter-pills" id="pos-pills">
-              <span class="pill active" data-cat="all" onclick="App.setPOSCategory('all', this)">All Parts</span>
-              ${state.categories.map(cat => `<span class="pill" data-cat="${cat}" onclick="App.setPOSCategory('${cat}', this)">${cat}</span>`).join('')}
+            <div class="pos-category-filter-row" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 12.5px; color: var(--text-muted); font-weight: 500;">Filter by Category:</span>
+              <select id="pos-category-select" class="form-select" onchange="App.setPOSCategory(this.value)" style="width: auto; min-width: 200px; padding: 6px 12px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; font-size: 13px;">
+                <option value="all" ${state.selectedCategory === 'all' ? 'selected' : ''}>All Parts</option>
+                ${state.categories.map(cat => `<option value="${cat}" ${state.selectedCategory === cat ? 'selected' : ''}>${cat}</option>`).join('')}
+              </select>
             </div>
           </div>
           <div class="pos-parts-scroll">
@@ -985,10 +989,57 @@ const App = (() => {
     applyPOSFilter();
   }
 
-  function setPOSCategory(cat, el) {
+  function showPOSDropdown(q) {
+    const dropdown = document.getElementById('pos-search-dropdown');
+    if (!dropdown) return;
+
+    const term = (q || '').trim().toLowerCase();
+    let matches = [];
+    if (!term) {
+      matches = state.parts.slice(0, 50); // Show first 50 parts if search is empty
+    } else {
+      matches = state.parts.filter(p => 
+        (p.name || '').toLowerCase().includes(term) || 
+        (p.sku || '').toLowerCase().includes(term)
+      ).slice(0, 50);
+    }
+
+    if (matches.length === 0) {
+      dropdown.classList.remove('hidden');
+      dropdown.innerHTML = '<div style="padding:8px; text-align:center; color:var(--text-muted); font-size:12px;">No parts found</div>';
+      return;
+    }
+
+    dropdown.classList.remove('hidden');
+    dropdown.innerHTML = matches.map(p => {
+      const channel = state.currentSalesChannel || 'shop';
+      const qty = channel === 'ground' ? (p.ground_qty ?? 0) : (p.shop_qty ?? 0);
+      const isOut = qty <= 0;
+      const stockBadge = isOut 
+        ? `<span class="badge" style="background-color:var(--accent); color:white; font-size:9.5px; padding:2px 6px;">Out of Stock</span>` 
+        : `<span class="badge badge-cash" style="font-size:9.5px; padding:2px 6px;">Stock: ${qty}</span>`;
+
+      return `
+        <div class="search-result-item" onclick="App.addToCart('${p.id}'); document.getElementById('pos-search').value=''; document.getElementById('pos-search-dropdown').classList.add('hidden');" style="padding:8px; border-bottom:1px solid var(--border); cursor:pointer; background:var(--bg-card); display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:600; font-size:13px; color:var(--text-primary);">${sanitize(p.name)}</div>
+            <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center; margin-top:2px;">
+              <span>SKU: ${sanitize(p.sku || '—')}</span>
+              ${stockBadge}
+            </div>
+          </div>
+          <div style="font-weight:600; font-size:12px; color:var(--success)">${ksh(p.selling_price)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function setPOSCategory(cat) {
     state.selectedCategory = cat;
-    document.querySelectorAll('#pos-pills .pill').forEach(p => p.classList.remove('active'));
-    el.classList.add('active');
+    const selectEl = document.getElementById('pos-category-select');
+    if (selectEl) {
+      selectEl.value = cat;
+    }
     applyPOSFilter();
   }
 
@@ -1202,8 +1253,10 @@ const App = (() => {
     const subtotal = state.cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
     const receiptNum = await DB.Sales.getNextReceiptNumber(state.settings.receipt_prefix || 'SAH');
     const mpesaTxn = document.getElementById('mpesa-txn-input')?.value?.trim().toUpperCase() || null;
-    const customerName = document.getElementById('credit-customer-name')?.value?.trim() || null;
-    const customerPhone = document.getElementById('credit-customer-phone')?.value?.trim() || null;
+    const customerNameRaw = document.getElementById('credit-customer-name')?.value?.trim() || null;
+    const customerPhoneRaw = document.getElementById('credit-customer-phone')?.value?.trim() || null;
+    const customerName = customerNameRaw ? normalizeCustomerName(customerNameRaw) : null;
+    const customerPhone = customerPhoneRaw ? normalizePhone(customerPhoneRaw) : null;
     const customerLocation = document.getElementById('credit-customer-location')?.value?.trim() || null;
 
     if (state.cartPayment === 'credit' && !customerName) {
@@ -1473,6 +1526,7 @@ const App = (() => {
 
     // Toggle corresponding action buttons
     const printReceiptAction = document.getElementById('btn-print-receipt-action');
+    const saveReceiptPdfAction = document.getElementById('btn-save-receipt-pdf-action');
     const shareReceiptAction = document.getElementById('btn-share-receipt-action');
     const printProformaAction = document.getElementById('btn-print-proforma-action');
     const saveProformaPdfAction = document.getElementById('btn-save-proforma-pdf-action');
@@ -1480,6 +1534,7 @@ const App = (() => {
 
     if (printReceiptAction && shareReceiptAction && printProformaAction && shareProformaAction) {
       printReceiptAction.classList.toggle('hidden', isProforma);
+      if (saveReceiptPdfAction) saveReceiptPdfAction.classList.toggle('hidden', isProforma);
       shareReceiptAction.classList.toggle('hidden', isProforma);
       printProformaAction.classList.toggle('hidden', !isProforma);
       if (saveProformaPdfAction) saveProformaPdfAction.classList.toggle('hidden', !isProforma);
@@ -1541,6 +1596,22 @@ const App = (() => {
     }, 1000);
   }
 
+  function normalizePhone(phone) {
+    if (!phone) return '';
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.startsWith('0') && cleaned.length === 10) {
+      cleaned = '254' + cleaned.slice(1);
+    } else if (cleaned.length === 9 && !cleaned.startsWith('254')) {
+      cleaned = '254' + cleaned;
+    }
+    return cleaned;
+  }
+
+  function normalizeCustomerName(name) {
+    if (!name) return '';
+    return name.trim().replace(/\s+/g, ' ');
+  }
+
   function getFirstName(fullName) {
     if (!fullName) return '';
     const first = fullName.trim().split(/\s+/)[0];
@@ -1577,6 +1648,36 @@ const App = (() => {
     });
   }
 
+  function saveReceiptPDF() {
+    const element = document.getElementById('receipt-printable');
+    if (!element) { showToast('Receipt preview not found', 'error'); return; }
+    
+    showToast('Generating PDF...', 'info');
+    const data = state.activeSaleForShare;
+    let customerName = '';
+    let receiptNum = 'Receipt';
+    if (data && data.sale) {
+      customerName = data.sale.customer_name || '';
+      receiptNum = data.receiptNum || 'Receipt';
+    }
+    const firstName = getFirstName(customerName);
+    const filename = `Receipt-${receiptNum}${firstName ? '-' + firstName : ''}.pdf`;
+    
+    const opt = {
+      margin:       0.1,
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: [3.15, 12], orientation: 'portrait' }
+    };
+    
+    html2pdf().set(opt).from(element).save().then(() => {
+      showToast('PDF downloaded successfully', 'success');
+    }).catch(err => {
+      showToast('PDF generation error: ' + err.message, 'error');
+    });
+  }
+
   function formatWhatsAppPhone(phone) {
     if (!phone) return '';
     let cleaned = phone.replace(/\D/g, '');
@@ -1594,7 +1695,7 @@ const App = (() => {
     const { sale, receiptNum } = data;
     const phone = formatWhatsAppPhone(sale.customer_phone || '');
     
-    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nAttached is your Receipt *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*.\n\n*Total Amount Paid:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Payment Method:* ${sale.payment_method.toUpperCase()}\n\nPlease find the attached PDF document. Thank you for choosing us!`;
+    const text = `Hello *${sale.customer_name || 'Customer'}*,\nAttached is your Receipt *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*.\n*Total Amount Paid:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Payment Method:* ${sale.payment_method.toUpperCase()}\nPlease find the attached PDF document. Thank you for choosing us!`;
     const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
@@ -1605,7 +1706,7 @@ const App = (() => {
     const { sale, receiptNum } = data;
     const phone = formatWhatsAppPhone(sale.customer_phone || '');
     
-    const text = `Hello *${sale.customer_name || 'Customer'}*,\n\nAttached is your Proforma Invoice *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}* upon dispatch of your goods.\n\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n\nPlease find the attached PDF document. Thank you for choosing us!`;
+    const text = `Hello *${sale.customer_name || 'Customer'}*,\nAttached is your Proforma Invoice *${receiptNum}* from *${state.settings.shop_name || 'Sahaja Spareshop'}* upon dispatch of your goods.\n*Total Amount:* KSh ${Number(sale.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\nPlease find the attached PDF document. Thank you for choosing us!`;
     const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
@@ -1663,6 +1764,7 @@ const App = (() => {
           
           <!-- View Receipt Actions -->
           <button class="btn btn-primary" id="btn-print-receipt-action" onclick="window.print()">${icons.print} Print Receipt</button>
+          <button class="btn btn-primary" id="btn-save-receipt-pdf-action" onclick="App.saveReceiptPDF()">${icons.download || ''} Save Receipt PDF</button>
           <button class="btn btn-secondary" id="btn-share-receipt-action" onclick="App.shareReceiptWhatsApp()">${icons.whatsapp || ''} Share Receipt (WA)</button>
           
           <!-- View Proforma Actions -->
@@ -2852,8 +2954,8 @@ const App = (() => {
   }
 
   async function saveQuotation() {
-    const custName = document.getElementById('q-cust-name')?.value.trim();
-    if (!custName) { showToast('Customer Name is required', 'error'); return; }
+    const custNameRaw = document.getElementById('q-cust-name')?.value.trim();
+    if (!custNameRaw) { showToast('Customer Name is required', 'error'); return; }
     if (state.quotationCart.length === 0) { showToast('Add at least one item to quotation', 'error'); return; }
 
     const btn = document.querySelector('.card button[onclick="App.saveQuotation()"]');
@@ -2866,10 +2968,14 @@ const App = (() => {
     }, 0);
     const total = itemValue;
 
+    const custName = normalizeCustomerName(custNameRaw);
+    const custPhoneRaw = document.getElementById('q-cust-phone')?.value.trim() || null;
+    const custPhone = custPhoneRaw ? normalizePhone(custPhoneRaw) : null;
+
     const quotation = {
       quotation_number: qNum,
       customer_name: custName,
-      customer_phone: document.getElementById('q-cust-phone')?.value.trim() || null,
+      customer_phone: custPhone,
       customer_email: document.getElementById('q-cust-email')?.value.trim() || null,
       attention_to: document.getElementById('q-cust-attn')?.value.trim() || null,
       reference_no: null,
@@ -3111,7 +3217,7 @@ const App = (() => {
 
   function shareQuotationWhatsApp(q) {
     const phone = formatWhatsAppPhone(q.customer_phone || '');
-    const text = `Hello *${q.customer_name || 'Customer'}*,\n\nAttached is your Quotation *${q.quotation_number}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*.\n\n*Total Amount:* KSh ${Number(q.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Attention:* ${q.attention_to || 'N/A'}\n*Date:* ${new Date(q.created_at).toLocaleDateString('en-KE')}\n\nPlease find the attached PDF document. Thank you for choosing us!`;
+    const text = `Hello *${q.customer_name || 'Customer'}*,\nAttached is your Quotation *${q.quotation_number}* from *${state.settings.shop_name || 'Sahaja Spareshop'}*.\n*Total Amount:* KSh ${Number(q.total_amount).toLocaleString('en-KE', { minimumFractionDigits: 2 })}\n*Attention:* ${q.attention_to || 'N/A'}\n*Date:* ${new Date(q.created_at).toLocaleDateString('en-KE')}\nPlease find the attached PDF document. Thank you for choosing us!`;
     const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
@@ -3392,8 +3498,8 @@ const App = (() => {
 
     s.forEach(sale => {
       if (!sale.customer_name) return;
-      const name = sale.customer_name.trim();
-      const phone = (sale.customer_phone || '').trim();
+      const name = normalizeCustomerName(sale.customer_name);
+      const phone = normalizePhone(sale.customer_phone || '');
       const key = `${name.toLowerCase()}___${phone}`;
 
       if (!customersMap[key]) {
@@ -3407,13 +3513,13 @@ const App = (() => {
           transactions: []
         };
       }
-      customersMap[key].totalSpent += (sale.total_amount || 0);
+      customersMap[key].totalSpent += Number(sale.total_amount || 0);
       customersMap[key].salesCount++;
       customersMap[key].transactions.push({
         id: sale.id,
         date: sale.created_at,
         receipt_number: sale.receipt_number,
-        amount: sale.total_amount,
+        amount: Number(sale.total_amount || 0),
         type: 'sale',
         payment_method: sale.payment_method
       });
@@ -3424,8 +3530,8 @@ const App = (() => {
 
     c.forEach(credit => {
       if (!credit.customer_name) return;
-      const name = credit.customer_name.trim();
-      const phone = (credit.customer_phone || '').trim();
+      const name = normalizeCustomerName(credit.customer_name);
+      const phone = normalizePhone(credit.customer_phone || '');
       const key = `${name.toLowerCase()}___${phone}`;
 
       if (!customersMap[key]) {
@@ -3439,16 +3545,33 @@ const App = (() => {
           transactions: []
         };
       }
-      customersMap[key].totalOwed += (credit.total_owed || 0) - (credit.paid || 0);
+      const creditOwed = Number(credit.total_owed || 0) - Number(credit.paid || 0);
+      customersMap[key].totalOwed += Math.max(0, creditOwed);
+      
       customersMap[key].transactions.push({
         id: credit.id,
         sale_id: credit.sale_id,
         date: credit.credit_date || credit.created_at,
         receipt_number: credit.receipt_number || 'Credit Note',
-        amount: credit.total_owed,
+        amount: Number(credit.total_owed || 0),
         type: 'credit',
         status: credit.status
       });
+
+      // Parse payment history
+      if (credit.payment_history && Array.isArray(credit.payment_history)) {
+        credit.payment_history.forEach(pay => {
+          customersMap[key].transactions.push({
+            id: credit.id,
+            sale_id: credit.sale_id,
+            date: pay.date,
+            receipt_number: credit.receipt_number || 'Credit Note',
+            amount: Number(pay.amount || 0),
+            type: 'payment',
+            balance_after: pay.balance_after
+          });
+        });
+      }
     });
 
     state.customerDatabase = Object.values(customersMap).sort((a, b) => b.totalSpent - a.totalSpent);
@@ -3574,6 +3697,16 @@ const App = (() => {
             <td>${dateStr}</td>
             <td>Sale: <span class="mono">${sanitize(t.receipt_number)}</span></td>
             <td><span class="badge ${badgeClass}">${t.payment_method}</span></td>
+            <td style="font-weight:700" class="success">+${ksh(t.amount)}</td>
+            <td>—</td>
+          </tr>
+        `;
+      } else if (t.type === 'payment') {
+        return `
+          <tr style="cursor:pointer" onclick="App.viewTransactionDetails('${t.sale_id}')" title="Click to view sale">
+            <td>${dateStr}</td>
+            <td>Payment: <span class="mono">${sanitize(t.receipt_number)}</span></td>
+            <td><span class="badge badge-success">Payment Received</span></td>
             <td style="font-weight:700" class="success">+${ksh(t.amount)}</td>
             <td>—</td>
           </tr>
@@ -4417,9 +4550,9 @@ const App = (() => {
     signIn,
     navigate,
     // POS
-    filterPOSParts, setPOSCategory, addToCart, updateCartQty, removeFromCart,
+    filterPOSParts, showPOSDropdown, setPOSCategory, addToCart, updateCartQty, removeFromCart,
     setPayMethod, processSale, switchPOSTab, setSalesChannel, shareReceiptPDF, viewTransactionDetails,
-    toggleReceiptView, printProformaInvoice, saveProformaPDF, shareReceiptWhatsApp, shareProformaWhatsApp,
+    toggleReceiptView, printProformaInvoice, saveProformaPDF, saveReceiptPDF, shareReceiptWhatsApp, shareProformaWhatsApp,
     // Inventory
     filterInventory, showAddPartModal, showEditPartModal, previewPartImage,
     clearPartImage, updateMarginPreview, savePartForm, quickRestock, deletePart,
@@ -4469,12 +4602,18 @@ const App = (() => {
         }
       });
 
-      // Close quotation part search results dropdown when clicking outside
+      // Close dropdowns when clicking outside
       document.addEventListener('click', (e) => {
-        const dropdown = document.getElementById('q-part-search-results');
-        const input = document.getElementById('q-part-search');
-        if (dropdown && input && !dropdown.contains(e.target) && e.target !== input) {
-          dropdown.classList.add('hidden');
+        const qDropdown = document.getElementById('q-part-search-results');
+        const qInput = document.getElementById('q-part-search');
+        if (qDropdown && qInput && !qDropdown.contains(e.target) && e.target !== qInput) {
+          qDropdown.classList.add('hidden');
+        }
+
+        const posDropdown = document.getElementById('pos-search-dropdown');
+        const posInput = document.getElementById('pos-search');
+        if (posDropdown && posInput && !posDropdown.contains(e.target) && e.target !== posInput) {
+          posDropdown.classList.add('hidden');
         }
       });
     }

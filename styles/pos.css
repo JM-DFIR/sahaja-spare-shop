@@ -105,9 +105,8 @@
 }
 
 .part-card.out-of-stock {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
+  opacity: 0.7;
+  cursor: pointer;
 }
 
 .part-card-img {
