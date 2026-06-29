@@ -954,10 +954,7 @@ const App = (() => {
     }
     return parts.map(part => {
       const channel = state.currentSalesChannel || 'shop';
-      const hasTransferred = (part.ground_qty ?? 0) > 0;
-      const shopQty = (hasTransferred || (part.shop_qty ?? 0) > 0) ? (part.shop_qty ?? 0) : (part.stock_qty ?? 0);
-      const groundQty = hasTransferred ? (part.ground_qty ?? 0) : shopQty;
-      const qty = channel === 'ground' ? groundQty : shopQty;
+      const qty = channel === 'ground' ? (part.ground_qty ?? 0) : (part.shop_qty ?? 0);
       const isOut = qty <= 0;
       const isLow = qty > 0 && qty <= (part.min_stock_threshold || 5);
       const status = isOut ? 'out' : isLow ? 'low' : 'good';
@@ -1016,10 +1013,7 @@ const App = (() => {
     dropdown.classList.remove('hidden');
     dropdown.innerHTML = matches.map(p => {
       const channel = state.currentSalesChannel || 'shop';
-      const hasTransferred = (p.ground_qty ?? 0) > 0;
-      const shopQty = (hasTransferred || (p.shop_qty ?? 0) > 0) ? (p.shop_qty ?? 0) : (p.stock_qty ?? 0);
-      const groundQty = hasTransferred ? (p.ground_qty ?? 0) : shopQty;
-      const qty = channel === 'ground' ? groundQty : shopQty;
+      const qty = channel === 'ground' ? (p.ground_qty ?? 0) : (p.shop_qty ?? 0);
       const isOut = qty <= 0;
       const stockBadge = isOut 
         ? `<span class="badge" style="background-color:var(--accent); color:white; font-size:9.5px; padding:2px 6px;">Out of Stock</span>` 
@@ -1277,10 +1271,7 @@ const App = (() => {
     for (const item of state.cart) {
       const part = state.parts.find(p => p.id === item.part_id);
       if (part) {
-        const hasTransferred = (part.ground_qty ?? 0) > 0;
-        const shopQty = (hasTransferred || (part.shop_qty ?? 0) > 0) ? (part.shop_qty ?? 0) : (part.stock_qty ?? 0);
-        const groundQty = hasTransferred ? (part.ground_qty ?? 0) : shopQty;
-        const channelQty = (state.currentSalesChannel === 'ground') ? groundQty : shopQty;
+        const channelQty = (state.currentSalesChannel === 'ground') ? (part.ground_qty || 0) : (part.shop_qty || 0);
         if (item.quantity > channelQty) {
           shortItems.push({
             item: item,
@@ -1948,10 +1939,6 @@ const App = (() => {
         ? `<img class="part-thumb" src="${part.image_url}" alt="${part.name}">`
         : `<div class="part-thumb-placeholder">${icons.image}</div>`;
 
-      const hasTransferred = (part.ground_qty ?? 0) > 0;
-      const displayShop = (hasTransferred || (part.shop_qty ?? 0) > 0) ? (part.shop_qty ?? 0) : (part.stock_qty ?? 0);
-      const displayGround = hasTransferred ? (part.ground_qty ?? 0) : displayShop;
-
       return `
         <tr>
           <td><input type="checkbox" class="checkbox row-check" data-id="${part.id}" onchange="App.updateBulkButtons()"></td>
@@ -1964,10 +1951,10 @@ const App = (() => {
           </td>
           <td class="mono">${sanitize(part.sku || '—')}</td>
           <td style="text-align:center">
-            <span class="stock-text ${displayShop <= 0 ? 'out' : displayShop <= (part.min_stock_threshold || 5) ? 'low' : 'good'}">${displayShop}</span>
+            <span class="stock-text ${part.shop_qty <= 0 ? 'out' : part.shop_qty <= (part.min_stock_threshold || 5) ? 'low' : 'good'}">${part.shop_qty}</span>
           </td>
           <td style="text-align:center">
-            <span class="stock-text ${displayGround <= 0 ? 'out' : 'good'}">${displayGround}</span>
+            <span class="stock-text ${part.ground_qty <= 0 ? 'out' : 'good'}">${part.ground_qty}</span>
           </td>
           <td style="text-align:center">
             <div class="stock-qty-cell" style="justify-content:center">
@@ -2149,10 +2136,11 @@ const App = (() => {
     };
 
     if (existingPart) {
-      partData.shop_qty = existingPart.shop_qty || 0;
+      const diff = newQty - (existingPart.stock_qty || 0);
+      partData.shop_qty = Math.max(0, (existingPart.shop_qty || 0) + diff);
       partData.ground_qty = existingPart.ground_qty || 0;
     } else {
-      partData.shop_qty = 0;
+      partData.shop_qty = newQty;
       partData.ground_qty = 0;
     }
 

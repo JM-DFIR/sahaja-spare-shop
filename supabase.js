@@ -37,12 +37,15 @@ const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 function mapPart(p) {
   if (!p) return p;
+  const isUnallocated = (p.shop_qty ?? 0) === 0 && (p.ground_qty ?? 0) === 0 && (p.qty ?? 0) > 0;
+  const shopQty = isUnallocated ? (p.qty ?? 0) : (p.shop_qty ?? 0);
+  const groundQty = p.ground_qty ?? 0;
   return {
     ...p,
     sku: p.code || '',                                  // code → sku
     stock_qty: p.qty ?? 0,                              // qty → stock_qty
-    shop_qty: p.shop_qty ?? 0,                          // new shop pool
-    ground_qty: p.ground_qty ?? 0,                      // new ground pool
+    shop_qty: shopQty,
+    ground_qty: groundQty,
     min_stock_threshold: p.min_qty ?? 5,                // min_qty → min_stock_threshold
     selling_price: p.sell_price ?? 0,                   // sell_price → selling_price
     buying_price: p.buy_price ?? 0,                     // buy_price → buying_price
@@ -315,24 +318,17 @@ const Sales = {
 
       if (part) {
         const qtyVal = part.qty || 0;
-        const hasTransferred = (part.ground_qty ?? 0) > 0;
-        let shop = (hasTransferred || (part.shop_qty ?? 0) > 0) ? (part.shop_qty ?? 0) : qtyVal;
-        let ground = hasTransferred ? (part.ground_qty ?? 0) : shop;
+        const isUnallocated = (part.shop_qty ?? 0) === 0 && (part.ground_qty ?? 0) === 0 && qtyVal > 0;
+        let shop = isUnallocated ? qtyVal : (part.shop_qty ?? 0);
+        let ground = part.ground_qty ?? 0;
 
         let deducted = 0;
         if (channel === 'ground') {
           deducted = Math.min(item.quantity, ground);
           ground = Math.max(0, ground - item.quantity);
-          if (!hasTransferred) {
-            shop = Math.max(0, qtyVal - deducted);
-            ground = 0;
-          }
         } else {
           deducted = Math.min(item.quantity, shop);
           shop = Math.max(0, shop - item.quantity);
-          if (!hasTransferred) {
-            ground = 0;
-          }
         }
 
         const newQty = Math.max(0, qtyVal - deducted);
